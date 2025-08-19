@@ -10,8 +10,10 @@ from pydantic import BaseModel
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.tools import sleeper_tools
+from app.tools import web_tools
 from app.services import analysis
 from app.services.logging import append_agent_log
+from app.services.llm_router import make_llm
 
 
 class AgentState(BaseModel):
@@ -36,9 +38,8 @@ SYNTH_PROMPT = (
 )
 
 
-def _llm() -> ChatOpenAI:
-    model = os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
-    return ChatOpenAI(model=model, temperature=0.2)
+def _llm():
+    return make_llm()
 
 
 async def classify_intent(state: AgentState) -> AgentState:
@@ -125,7 +126,7 @@ async def fetch_context(state: AgentState) -> AgentState:
     sources: List[Dict[str, Any]] = []
     data: Dict[str, Any] = {"preferences": state.preferences or {}}
 
-    # Always try to include league profile and my-team snapshot for richer synthesis
+    # League profile and rosters
     league = await sleeper_tools.get_league_info.ainvoke({})
     sources.append({"tool": "get_league_info", "args": {}})
     league_profile = _compute_league_profile(league)
@@ -135,23 +136,28 @@ async def fetch_context(state: AgentState) -> AgentState:
     data["rosters"] = rosters
     sources.append({"tool": "get_rosters", "args": {}})
 
-    # My team snapshot if user claimed ownership
-    my_team = None
+    # News/trending: perform a web search when intent indicates fresh info
+    if intent in {"trending"}:
+        query = f"NFL fantasy trending adds drops week {league_profile.get('season','')}"
+        web = await web_tools.web_search.ainvoke({"query": query, "max_results": 5})
+        data["web_results"] = web
+        sources.append({"tool": "web_search", "args": {"query": query}})
+
+    # My team snapshot
     prefs = state.preferences or {}
     owner_name = (prefs.get("roster_owner_name") or "").strip().lower()
+    my_team = None
     if owner_name:
         for r in rosters:
             if str(r.get("owner") or "").strip().lower() == owner_name:
                 my_team = r
                 break
     if my_team:
-        # Pull current week for projections
         state_info = await sleeper_tools.get_nfl_state.ainvoke({})
         week = int(state_info.get("week") or 1)
         sources.append({"tool": "get_nfl_state", "args": {}})
         matchups = await sleeper_tools.get_matchups.ainvoke({"week": week})
         sources.append({"tool": "get_matchups", "args": {"week": week}})
-        # Build starters projected points for my team
         starters_ids = my_team.get("starters", []) or []
         proj_map: Dict[str, float] = {}
         for m in matchups:
@@ -169,9 +175,6 @@ async def fetch_context(state: AgentState) -> AgentState:
             "starters": starters_ids,
             "projected_points": sum(proj_map.values()) if proj_map else None,
         }
-        # Simple roster value estimate for my team
-        # Fetch catalog once via search_players tool's underlying client, approximated by not exposing here
-        # This will be computed in synthesis if needed; we include counts as proxy
         data["my_team"]["num_players"] = len(my_team.get("players") or [])
 
     # Intent-specific additions
