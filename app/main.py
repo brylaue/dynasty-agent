@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Red
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from typing import List, Dict, Any
 
 from app.agents.graph import create_research_graph
 from app.services.sleeper_client import SleeperClient
@@ -216,3 +217,61 @@ async def set_prefs(body: PrefsBody):
     )
     memory_store.set_preferences(prefs, user_id=body.user_id or "default")
     return {"ok": True}
+
+
+@app.get("/api/players/search")
+async def api_players_search(q: str, limit: int = 10, provider: str | None = LeagueProvider.SLEEPER):
+    try:
+        client = provider_router.get_client(provider or LeagueProvider.SLEEPER)
+        # Sleeper-only for now
+        if hasattr(client, "get_players"):
+            catalog = await client.get_players()
+            query = (q or "").lower()
+            results: List[Dict[str, Any]] = []
+            for pid, p in catalog.items():
+                name = (p.get("full_name") or ((p.get("first_name") or "") + " " + (p.get("last_name") or "")).strip()).lower()
+                if query in name:
+                    results.append({
+                        "player_id": pid,
+                        "full_name": p.get("full_name") or name.title(),
+                        "position": p.get("position"),
+                        "team": p.get("team"),
+                    })
+                if len(results) >= limit:
+                    break
+            return results
+        return []
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+class TradeEvalBody(BaseModel):
+    teamA: List[str]
+    teamB: List[str]
+    league_id: str | None = None
+    provider: str | None = LeagueProvider.SLEEPER
+
+
+@app.post("/api/trade/evaluate")
+async def api_trade_evaluate(body: TradeEvalBody):
+    try:
+        client = provider_router.get_client(body.provider or LeagueProvider.SLEEPER)
+        # Build simple value map from players catalog
+        catalog = await client.get_players() if hasattr(client, "get_players") else {}
+        pos_base = {"QB": 60, "RB": 70, "WR": 60, "TE": 45, "K": 10, "DEF": 15}
+        def value_for(pid: str) -> float:
+            p = catalog.get(pid, {})
+            v = float(pos_base.get(p.get("position"), 25))
+            return v
+        totalA = sum(value_for(pid) for pid in (body.teamA or []))
+        totalB = sum(value_for(pid) for pid in (body.teamB or []))
+        diff = round(totalA - totalB, 1)
+        verdict = "Fair"
+        if diff > 10:
+            verdict = "Favors Team A"
+        elif diff < -10:
+            verdict = "Favors Team B"
+        narrative = f"Team A total value {totalA:.1f} vs Team B {totalB:.1f}. {verdict}."
+        return {"teamA_total": totalA, "teamB_total": totalB, "diff": diff, "verdict": verdict, "narrative": narrative}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
