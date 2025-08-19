@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Callable, Awaitable
 
 import httpx
 
@@ -12,9 +12,13 @@ class SleeperClient:
 
 	def __init__(self, default_league_id: Optional[str] = None) -> None:
 		self.default_league_id = default_league_id
-		self._client = httpx.AsyncClient(timeout=httpx.Timeout(20.0))
+		self._client = httpx.AsyncClient(
+			timeout=httpx.Timeout(20.0),
+			limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+		)
 		self._players_cache: Optional[Dict[str, Any]] = None
 		self._players_cache_ts: float = 0.0
+		self._cache: Dict[str, tuple[float, Any]] = {}
 
 	async def close(self) -> None:
 		await self._client.aclose()
@@ -25,25 +29,42 @@ class SleeperClient:
 		resp.raise_for_status()
 		return resp.json()
 
-	async def get_league(self, league_id: Optional[str] = None) -> Dict[str, Any]:
+	async def _cached(self, key: str, ttl_s: float, fetch: Callable[[], Awaitable[Any]], *, force_refresh: bool = False) -> Any:
+		now = time.time()
+		if not force_refresh and (entry := self._cache.get(key)):
+			ts, data = entry
+			if now - ts < ttl_s:
+				return data
+		data = await fetch()
+		self._cache[key] = (now, data)
+		return data
+
+	# League-level endpoints
+	async def get_league(self, league_id: Optional[str] = None, *, force_refresh: bool = False) -> Dict[str, Any]:
 		league_id = league_id or self.default_league_id
-		return await self._get(f"/league/{league_id}")
+		key = f"league:{league_id}"
+		return await self._cached(key, 600.0, lambda: self._get(f"/league/{league_id}"), force_refresh=force_refresh)
 
-	async def get_users(self, league_id: Optional[str] = None) -> List[Dict[str, Any]]:
+	async def get_users(self, league_id: Optional[str] = None, *, force_refresh: bool = False) -> List[Dict[str, Any]]:
 		league_id = league_id or self.default_league_id
-		return await self._get(f"/league/{league_id}/users")
+		key = f"users:{league_id}"
+		return await self._cached(key, 600.0, lambda: self._get(f"/league/{league_id}/users"), force_refresh=force_refresh)
 
-	async def get_rosters(self, league_id: Optional[str] = None) -> List[Dict[str, Any]]:
+	async def get_rosters(self, league_id: Optional[str] = None, *, force_refresh: bool = False) -> List[Dict[str, Any]]:
 		league_id = league_id or self.default_league_id
-		return await self._get(f"/league/{league_id}/rosters")
+		key = f"rosters:{league_id}"
+		return await self._cached(key, 120.0, lambda: self._get(f"/league/{league_id}/rosters"), force_refresh=force_refresh)
 
-	async def get_matchups(self, week: int, league_id: Optional[str] = None) -> List[Dict[str, Any]]:
+	async def get_matchups(self, week: int, league_id: Optional[str] = None, *, force_refresh: bool = False) -> List[Dict[str, Any]]:
 		league_id = league_id or self.default_league_id
-		return await self._get(f"/league/{league_id}/matchups/{week}")
+		key = f"matchups:{league_id}:{week}"
+		return await self._cached(key, 120.0, lambda: self._get(f"/league/{league_id}/matchups/{week}"), force_refresh=force_refresh)
 
-	async def get_nfl_state(self) -> Dict[str, Any]:
-		return await self._get("/state/nfl")
+	async def get_nfl_state(self, *, force_refresh: bool = False) -> Dict[str, Any]:
+		key = "state:nfl"
+		return await self._cached(key, 30.0, lambda: self._get("/state/nfl"), force_refresh=force_refresh)
 
+	# Players catalog is large; keep separate daily cache
 	async def get_players(self, force_refresh: bool = False) -> Dict[str, Any]:
 		now = time.time()
 		if not force_refresh and self._players_cache and (now - self._players_cache_ts) < 24 * 3600:
@@ -77,9 +98,10 @@ class SleeperClient:
 			)
 		return summaries
 
-	async def get_trending_players(self, sport: str = "nfl", trend_type: str = "add", lookback_hours: int = 24, limit: int = 25) -> List[Dict[str, Any]]:
+	async def get_trending_players(self, sport: str = "nfl", trend_type: str = "add", lookback_hours: int = 24, limit: int = 25, *, force_refresh: bool = False) -> List[Dict[str, Any]]:
 		params = {"lookback_hours": lookback_hours, "limit": limit}
-		return await self._get(f"/players/trending/{sport}/{trend_type}", params=params)
+		key = f"trending:{sport}:{trend_type}:{lookback_hours}:{limit}"
+		return await self._cached(key, 300.0, lambda: self._get(f"/players/trending/{sport}/{trend_type}", params=params), force_refresh=force_refresh)
 
 	async def get_player_lookup(self) -> Dict[str, Any]:
 		return await self.get_players()
