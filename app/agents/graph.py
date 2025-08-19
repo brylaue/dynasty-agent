@@ -31,6 +31,7 @@ SYSTEM_PROMPT = (
 
 SYNTH_PROMPT = (
     "You are a Fantasy Football research agent. Use the provided context and user preferences to answer the user's question with concise, actionable advice. "
+    "Emphasize league-specific factors (roster size, starting slots, scoring) and the user's team status when relevant. "
     "If appropriate, add a short bullet list of recommendations."
 )
 
@@ -84,21 +85,101 @@ async def classify_intent(state: AgentState) -> AgentState:
     )
 
 
+def _compute_league_profile(league: Dict[str, Any]) -> Dict[str, Any]:
+    roster_positions = league.get("roster_positions") or []
+    scoring = league.get("scoring_settings") or {}
+    total_rosters = league.get("total_rosters")
+    # Derive starting slots and roster size (exclude bench BN)
+    starting_slots = [pos for pos in roster_positions if str(pos).upper() != "BN"]
+    roster_size = len(roster_positions)
+    profile = {
+        "league_id": league.get("league_id"),
+        "name": league.get("name"),
+        "season": league.get("season"),
+        "status": league.get("status"),
+        "total_rosters": total_rosters,
+        "roster_size": roster_size,
+        "starting_slots": starting_slots,
+        "scoring_settings": scoring,
+    }
+    # Common scoring highlights
+    ppr = scoring.get("rec")
+    profile["ppr"] = ppr
+    td_pass = scoring.get("pass_td")
+    profile["pass_td_points"] = td_pass
+    return profile
+
+
+def _estimate_roster_value(roster_players: List[str], player_catalog: Dict[str, Any]) -> float:
+    pos_base = {"QB": 60, "RB": 70, "WR": 60, "TE": 45, "K": 10, "DEF": 15}
+    total = 0.0
+    for pid in roster_players or []:
+        p = player_catalog.get(pid) or {}
+        total += float(pos_base.get(p.get("position"), 25))
+    return round(total, 1)
+
+
 async def fetch_context(state: AgentState) -> AgentState:
     t0 = time.perf_counter()
     intent = state.intent or "rosters"
     sources: List[Dict[str, Any]] = []
     data: Dict[str, Any] = {"preferences": state.preferences or {}}
 
+    # Always try to include league profile and my-team snapshot for richer synthesis
+    league = await sleeper_tools.get_league_info.ainvoke({})
+    sources.append({"tool": "get_league_info", "args": {}})
+    league_profile = _compute_league_profile(league)
+    data["league_profile"] = league_profile
+
+    rosters = await sleeper_tools.get_rosters.ainvoke({})
+    data["rosters"] = rosters
+    sources.append({"tool": "get_rosters", "args": {}})
+
+    # My team snapshot if user claimed ownership
+    my_team = None
+    prefs = state.preferences or {}
+    owner_name = (prefs.get("roster_owner_name") or "").strip().lower()
+    if owner_name:
+        for r in rosters:
+            if str(r.get("owner") or "").strip().lower() == owner_name:
+                my_team = r
+                break
+    if my_team:
+        # Pull current week for projections
+        state_info = await sleeper_tools.get_nfl_state.ainvoke({})
+        week = int(state_info.get("week") or 1)
+        sources.append({"tool": "get_nfl_state", "args": {}})
+        matchups = await sleeper_tools.get_matchups.ainvoke({"week": week})
+        sources.append({"tool": "get_matchups", "args": {"week": week}})
+        # Build starters projected points for my team
+        starters_ids = my_team.get("starters", []) or []
+        proj_map: Dict[str, float] = {}
+        for m in matchups:
+            if m.get("roster_id") == my_team.get("roster_id"):
+                sp = m.get("starters_points") or []
+                for idx, pid in enumerate(starters_ids):
+                    if idx < len(sp) and sp[idx] is not None:
+                        proj_map[pid] = float(sp[idx])
+                break
+        data["my_team"] = {
+            "owner": my_team.get("owner"),
+            "roster_id": my_team.get("roster_id"),
+            "wins": my_team.get("wins"),
+            "losses": my_team.get("losses"),
+            "starters": starters_ids,
+            "projected_points": sum(proj_map.values()) if proj_map else None,
+        }
+        # Simple roster value estimate for my team
+        # Fetch catalog once via search_players tool's underlying client, approximated by not exposing here
+        # This will be computed in synthesis if needed; we include counts as proxy
+        data["my_team"]["num_players"] = len(my_team.get("players") or [])
+
+    # Intent-specific additions
     if intent == "league_info":
-        league = await sleeper_tools.get_league_info.ainvoke({})
-        data["league"] = league
-        sources.append({"tool": "get_league_info", "args": {}})
+        pass  # league_profile already included
 
     elif intent == "rosters":
-        rosters = await sleeper_tools.get_rosters.ainvoke({})
-        data["rosters"] = rosters
-        sources.append({"tool": "get_rosters", "args": {}})
+        pass
 
     elif intent == "matchups":
         state_info = await sleeper_tools.get_nfl_state.ainvoke({})
@@ -134,18 +215,18 @@ async def fetch_context(state: AgentState) -> AgentState:
         sources.append({"tool": "get_trending_players", "args": {"trend_type": "add", "lookback_hours": 72, "limit": 50}})
 
     elif intent in {"start_sit", "trade"}:
-        rosters, nfl_state = await sleeper_tools.get_rosters.ainvoke({}), await sleeper_tools.get_nfl_state.ainvoke({})
-        data["rosters"] = rosters
+        rosters2, nfl_state = await sleeper_tools.get_rosters.ainvoke({}), await sleeper_tools.get_nfl_state.ainvoke({})
+        data["rosters"] = rosters2
         data["nfl_state"] = nfl_state
         sources.extend([
             {"tool": "get_rosters", "args": {}},
             {"tool": "get_nfl_state", "args": {}},
         ])
         if intent == "start_sit":
-            data["start_sit"] = await analysis.suggest_start_sit(rosters)
+            data["start_sit"] = await analysis.suggest_start_sit(rosters2)
         else:
             trending = await sleeper_tools.get_trending_players.ainvoke({"trend_type": "add", "lookback_hours": 48, "limit": 50})
-            data["trade_suggestions"] = await analysis.suggest_trade_targets(rosters, trending)
+            data["trade_suggestions"] = await analysis.suggest_trade_targets(rosters2, trending)
             sources.append({"tool": "get_trending_players", "args": {"trend_type": "add", "lookback_hours": 48, "limit": 50}})
 
     t1 = time.perf_counter()
