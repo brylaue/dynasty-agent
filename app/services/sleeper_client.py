@@ -5,6 +5,7 @@ import time
 from typing import Any, Dict, List, Optional, Callable, Awaitable
 
 import httpx
+from rapidfuzz import process, fuzz
 
 
 class SleeperClient:
@@ -228,3 +229,24 @@ class SleeperClient:
 			self.get_trending_players(trend_type="drop", lookback_hours=lookback_hours, limit=limit),
 		)
 		return {"adds": adds, "drops": drops}
+
+	async def get_player_id_fuzzy(self, name_query: str) -> Optional[Dict[str, str]]:
+		catalog = await self.get_players()
+		# Build name lists lazily
+		names = []
+		name_to_id = {}
+		for pid, p in catalog.items():
+			full = p.get("full_name") or ((p.get("first_name") or "") + " " + (p.get("last_name") or "")).strip()
+			if full:
+				names.append(full)
+				name_to_id[full] = pid
+		if not names:
+			return None
+		nearest = process.extractOne(name_query, names, scorer=fuzz.WRatio)
+		if not nearest:
+			return None
+		best_name = nearest[0]
+		pid = name_to_id.get(best_name)
+		if not pid:
+			return None
+		return {"player_id": pid, "full_name": best_name}

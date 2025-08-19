@@ -81,3 +81,31 @@ async def get_trending_players(trend_type: str = "add", lookback_hours: int = 24
     """Fetch trending players on Sleeper for the last N hours, either 'add' or 'drop'."""
     assert _sleeper_client is not None, "Sleeper client not set"
     return await _sleeper_client.get_trending_players(trend_type=trend_type, lookback_hours=lookback_hours, limit=limit)
+
+
+@tool("find_player", return_direct=False)
+async def find_player(player_name: str) -> Dict[str, Any]:
+    """Fuzzy search a player by name and return {'player_id','full_name'}. Use this to convert names to ids when needed."""
+    assert _sleeper_client is not None, "Sleeper client not set"
+    match = await _sleeper_client.get_player_id_fuzzy(player_name)
+    return match or {}
+
+@tool("get_player_news", return_direct=False)
+async def get_player_news(player_name: str, limit: int = 3) -> Dict[str, Any]:
+    """Get recent news about a player by name. Returns {'player':'Name','items':[{'title','description','url'}]}.
+    Sources may include Sleeper trending and RSS aggregator. """
+    assert _sleeper_client is not None, "Sleeper client not set"
+    match = await _sleeper_client.get_player_id_fuzzy(player_name)
+    if not match:
+        return {"player": player_name, "items": []}
+    # For now, reuse trending adds/drops and filter by name; RSS handled in /api/news.
+    adds = await _sleeper_client.get_trending_players(trend_type="add", lookback_hours=72, limit=50)
+    drops = await _sleeper_client.get_trending_players(trend_type="drop", lookback_hours=72, limit=50)
+    items: List[Dict[str, Any]] = []
+    needle = (match["full_name"] or player_name).lower()
+    for blob in adds + drops:
+        if needle in (str(blob).lower()):
+            items.append({"title": f"Trending: {blob.get('player_id')}", "description": str(blob)[:280]})
+        if len(items) >= limit:
+            break
+    return {"player": match["full_name"], "items": items}

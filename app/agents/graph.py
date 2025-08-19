@@ -28,7 +28,8 @@ class AgentState(BaseModel):
 
 SYSTEM_PROMPT = (
     "You are a Fantasy Football research agent for a Sleeper league. "
-    "Classify questions into one of: 'league_info', 'rosters', 'matchups', 'players_search', 'trending', 'nfl_state', 'start_sit', 'trade', 'waivers'."
+    "Classify questions into one of: 'league_info', 'rosters', 'matchups', 'players_search', 'trending', 'nfl_state', 'start_sit', 'trade', 'waivers'. "
+    "Always refer to players by their full names in responses (never by numeric IDs)."
 )
 
 SYNTH_PROMPT = (
