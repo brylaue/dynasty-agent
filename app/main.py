@@ -16,7 +16,7 @@ load_dotenv()
 
 LEAGUE_ID = os.getenv("SLEEPER_LEAGUE_ID", "1180244317552857088")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5")
 
 app = FastAPI(title="Fantasy Research Agent")
 app.add_middleware(
