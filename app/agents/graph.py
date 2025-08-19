@@ -14,6 +14,7 @@ from app.services import analysis
 
 class AgentState(BaseModel):
     question: str
+    preferences: Dict[str, Any] | None = None
     intent: Optional[str] = None
     data: Dict[str, Any] = {}
     answer: Optional[str] = None
@@ -26,7 +27,7 @@ SYSTEM_PROMPT = (
 )
 
 SYNTH_PROMPT = (
-    "You are a Fantasy Football research agent. Use the provided context to answer the user's question with concise, actionable advice. "
+    "You are a Fantasy Football research agent. Use the provided context and user preferences to answer the user's question with concise, actionable advice. "
     "If appropriate, add a short bullet list of recommendations."
 )
 
@@ -44,7 +45,6 @@ async def classify_intent(state: AgentState) -> AgentState:
     ]
     result = await llm.ainvoke(messages)
     intent = (result.content or "").strip().lower()
-    # Normalize
     mapping = {
         "league": "league_info",
         "league_info": "league_info",
@@ -67,13 +67,13 @@ async def classify_intent(state: AgentState) -> AgentState:
             break
     if intent not in mapping.values():
         intent = "rosters"
-    return AgentState(question=state.question, intent=intent, data={}, sources=[])
+    return AgentState(question=state.question, preferences=state.preferences, intent=intent, data={}, sources=[])
 
 
 async def fetch_context(state: AgentState) -> AgentState:
     intent = state.intent or "rosters"
     sources: List[Dict[str, Any]] = []
-    data: Dict[str, Any] = {}
+    data: Dict[str, Any] = {"preferences": state.preferences or {}}
 
     if intent == "league_info":
         league = await sleeper_tools.get_league_info.ainvoke({})
@@ -96,7 +96,6 @@ async def fetch_context(state: AgentState) -> AgentState:
         ])
 
     elif intent == "players_search":
-        # Heuristic: extract name fragment from the question
         frag = state.question
         players = await sleeper_tools.search_players.ainvoke({"query": frag, "limit": 10})
         data["players"] = players
@@ -120,7 +119,6 @@ async def fetch_context(state: AgentState) -> AgentState:
             {"tool": "get_rosters", "args": {}},
             {"tool": "get_nfl_state", "args": {}},
         ])
-        # Augment with simple analysis
         if intent == "start_sit":
             data["start_sit"] = await analysis.suggest_start_sit(rosters)
         else:
@@ -128,14 +126,16 @@ async def fetch_context(state: AgentState) -> AgentState:
             data["trade_suggestions"] = await analysis.suggest_trade_targets(rosters, trending)
             sources.append({"tool": "get_trending_players", "args": {"trend_type": "add", "lookback_hours": 48, "limit": 50}})
 
-    return AgentState(question=state.question, intent=intent, data=data, sources=sources)
+    return AgentState(question=state.question, preferences=state.preferences, intent=intent, data=data, sources=sources)
 
 
 async def synthesize(state: AgentState) -> AgentState:
     llm = _llm()
     context_lines = [f"Intent: {state.intent}"]
+    prefs = state.preferences or {}
+    if prefs:
+        context_lines.append(f"Preferences: {prefs}")
     for k, v in state.data.items():
-        # Keep context compact
         snippet = str(v)
         if len(snippet) > 4000:
             snippet = snippet[:4000] + "..."
@@ -149,6 +149,7 @@ async def synthesize(state: AgentState) -> AgentState:
     result = await llm.ainvoke(messages)
     return AgentState(
         question=state.question,
+        preferences=state.preferences,
         intent=state.intent,
         data=state.data,
         answer=result.content or "",

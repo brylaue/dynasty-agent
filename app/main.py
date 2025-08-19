@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.agents.graph import create_research_graph
 from app.services.sleeper_client import SleeperClient
+from app.services.memory import MemoryStore, UserPreferences
 
 load_dotenv()
 
@@ -27,10 +28,12 @@ templates = Jinja2Templates(directory="app/templates")
 
 sleeper_client = SleeperClient(default_league_id=LEAGUE_ID)
 research_graph = create_research_graph(sleeper_client=sleeper_client)
+memory_store = MemoryStore()
 
 
 class QueryBody(BaseModel):
     question: str
+    user_id: str | None = "default"
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -43,7 +46,8 @@ async def home(request: Request):
 
 @app.post("/api/ask")
 async def ask_agent(body: QueryBody):
-    result = await research_graph.ainvoke({"question": body.question})
+    prefs = memory_store.get_preferences(user_id=body.user_id or "default").model_dump(exclude_none=True)
+    result = await research_graph.ainvoke({"question": body.question, "preferences": prefs})
     return {
         "answer": result.get("answer", "No answer produced."),
         "sources": result.get("sources", []),
@@ -53,21 +57,43 @@ async def ask_agent(body: QueryBody):
 
 
 @app.get("/api/ask/stream")
-async def ask_agent_stream(question: str):
+async def ask_agent_stream(question: str, user_id: str = "default"):
+    prefs = memory_store.get_preferences(user_id=user_id).model_dump(exclude_none=True)
+
     async def event_gen():
-        # Coarse-grained streaming: chunk in 4 phases
         yield f"data: planning...\n\n"
-        result = await research_graph.ainvoke({"question": question})
+        result = await research_graph.ainvoke({"question": question, "preferences": prefs})
         answer = result.get("answer", "")
         sources = result.get("sources", [])
-        # Stream the answer in chunks
         chunk_size = 200
         for i in range(0, len(answer), chunk_size):
             yield f"data: {answer[i:i+chunk_size]}\n\n"
-        # Final sources
         yield f"data: \n\n"
         yield f"event: sources\n"
         yield f"data: {sources}\n\n"
         yield "event: end\n\n"
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+
+@app.get("/api/prefs")
+async def get_prefs(user_id: str = "default"):
+    return memory_store.get_preferences(user_id=user_id).model_dump(exclude_none=True)
+
+
+class PrefsBody(BaseModel):
+    favorite_team: str | None = None
+    roster_owner_name: str | None = None
+    risk_tolerance: str | None = None
+    user_id: str | None = "default"
+
+
+@app.post("/api/prefs")
+async def set_prefs(body: PrefsBody):
+    prefs = UserPreferences(
+        favorite_team=body.favorite_team,
+        roster_owner_name=body.roster_owner_name,
+        risk_tolerance=body.risk_tolerance,
+    )
+    memory_store.set_preferences(prefs, user_id=body.user_id or "default")
+    return {"ok": True}
