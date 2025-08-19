@@ -6,6 +6,13 @@
   <title>Dynasty Agent</title>
   <link rel="stylesheet" href="/static/style.css" />
   <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script>
+    window.SUPABASE_URL=''; window.SUPABASE_ANON='';
+    fetch('/api/public/config').then(r=>r.json()).then(cfg=>{
+      window.SUPABASE_URL = cfg.supabase_url || '';
+      window.SUPABASE_ANON = cfg.supabase_anon || '';
+    }).catch(()=>{});
+  </script>
 </head>
 <body>
   <header class="topbar">
@@ -31,47 +38,37 @@
     <p class="meta">Find League ID in Sleeper → League → Settings → League ID.</p>
   </main>
   <script>
-    const supabaseUrl = window.SUPABASE_URL || '';
-    const supabaseAnon = window.SUPABASE_ANON || '';
-    const sb = (supabaseUrl && supabaseAnon) ? window.supabase.createClient(supabaseUrl, supabaseAnon) : null;
+    const supabaseUrl = () => window.SUPABASE_URL || '';
+    const supabaseAnon = () => window.SUPABASE_ANON || '';
+    const sb = window.supabase.createClient(supabaseUrl(), supabaseAnon());
 
     async function updateAuthUI() {
       const signinBtn = document.getElementById('google-signin');
       const signoutBtn = document.getElementById('signout');
-      if (!sb) { signinBtn.style.display='none'; signoutBtn.style.display='none'; return; }
+      if (!supabaseUrl() || !supabaseAnon()) { signinBtn.style.display='none'; signoutBtn.style.display='none'; return; }
       const { data: { session } } = await sb.auth.getSession();
-      if (session) {
-        signinBtn.style.display = 'none';
-        signoutBtn.style.display = 'inline-block';
-      } else {
-        signinBtn.style.display = 'inline-block';
-        signoutBtn.style.display = 'none';
-      }
+      if (session) { signinBtn.style.display = 'none'; signoutBtn.style.display = 'inline-block'; }
+      else { signinBtn.style.display = 'inline-block'; signoutBtn.style.display = 'none'; }
     }
 
     document.getElementById('google-signin').addEventListener('click', async ()=>{
-      if (!sb) return alert('Auth disabled');
-      const { data, error } = await sb.auth.signInWithOAuth({ provider: 'google' });
+      if (!supabaseUrl()) return alert('Auth disabled');
+      const { error } = await sb.auth.signInWithOAuth({ provider: 'google' });
       if (error) alert(error.message);
     });
-    document.getElementById('signout').addEventListener('click', async ()=>{
-      if (!sb) return; await sb.auth.signOut(); updateAuthUI();
-    });
+    document.getElementById('signout').addEventListener('click', async ()=>{ await sb.auth.signOut(); updateAuthUI(); });
 
     document.getElementById('continue').addEventListener('click', async ()=>{
       const prov = document.getElementById('provider').value;
       const league = document.getElementById('landing-league').value.trim();
       localStorage.setItem('provider', prov);
       if (league) localStorage.setItem('league_id', league);
-      // pass session token to app if present
-      if (sb) {
-        const { data: { session } } = await sb.auth.getSession();
-        if (session) localStorage.setItem('sb_token', session.access_token);
-      }
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) localStorage.setItem('sb_token', session.access_token);
       window.location.href = '/app.html';
     });
 
-    updateAuthUI();
+    setTimeout(updateAuthUI, 400);
   </script>
 </body>
 </html>

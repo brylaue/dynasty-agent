@@ -342,3 +342,11 @@ async def api_trade_evaluate(body: TradeEvalBody):
         return {"teamA_total": totalA, "teamB_total": totalB, "diff": diff, "verdict": verdict, "narrative": narrative}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/public/config")
+async def public_config():
+    return {
+        "supabase_url": os.getenv("SUPABASE_URL", ""),
+        "supabase_anon": os.getenv("SUPABASE_ANON", ""),
+    }

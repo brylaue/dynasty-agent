@@ -6,6 +6,10 @@
 	<title>Dynasty Agent • App</title>
 	<link rel="stylesheet" href="/static/style.css" />
 	<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+	<script>
+		window.SUPABASE_URL=''; window.SUPABASE_ANON='';
+		fetch('/api/public/config').then(r=>r.json()).then(cfg=>{ window.SUPABASE_URL=cfg.supabase_url||''; window.SUPABASE_ANON=cfg.supabase_anon||''; }).catch(()=>{});
+	</script>
 </head>
 <body>
 	<header class="topbar">
@@ -101,11 +105,11 @@
 	</footer>
 
 	<script>
-		const sbUrl = window.SUPABASE_URL || '';
-		const sbAnon = window.SUPABASE_ANON || '';
-		const sb = (sbUrl && sbAnon) ? window.supabase.createClient(sbUrl, sbAnon) : null;
+		const sbUrl = () => window.SUPABASE_URL || '';
+		const sbAnon = () => window.SUPABASE_ANON || '';
+		const sb = window.supabase.createClient(sbUrl(), sbAnon());
 		window.getAuthHeaders = async () => {
-			if (!sb) return {};
+			if (!sbUrl()) return {};
 			const { data: { session } } = await sb.auth.getSession();
 			if (session?.access_token) return { 'Authorization': `Bearer ${session.access_token}` };
 			return {};
