@@ -1,4 +1,5 @@
 let API_BASE = '';
+let PROVIDER = localStorage.getItem('provider') || 'sleeper';
 let LEAGUE_ID = localStorage.getItem('league_id') || '';
 const backendInput = document.getElementById('backend-base');
 const saveBackendBtn = document.getElementById('save-backend');
@@ -8,9 +9,9 @@ if (leagueInput) leagueInput.value = LEAGUE_ID;
 
 function apiUrl(path, params = {}) {
   const urlBase = API_BASE ? API_BASE.replace(/\/$/, '') : '';
-  const search = new URLSearchParams(params).toString();
-  const full = (urlBase + path) + (search ? `?${search}` : '');
-  return full;
+  const merged = { provider: PROVIDER, ...params };
+  const search = new URLSearchParams(merged).toString();
+  return (urlBase + path) + (search ? `?${search}` : '');
 }
 
 // Tabs
@@ -30,13 +31,6 @@ const form = document.getElementById('ask-form');
 const input = document.getElementById('question');
 const messages = document.getElementById('messages');
 
-// Rosters
-const loadBtn = document.getElementById('load-rosters');
-const ownerSelect = document.getElementById('owner-select');
-const saveTeamBtn = document.getElementById('save-team');
-const rosterList = document.getElementById('roster-list');
-let myTeamName = '';
-
 function addMessage(role, text, sources) {
   const div = document.createElement('div');
   div.className = `msg ${role}`;
@@ -45,7 +39,7 @@ function addMessage(role, text, sources) {
     const src = document.createElement('div');
     src.style.marginTop = '6px';
     src.style.fontSize = '12px';
-    src.style.color = '#9aa3b2';
+    src.style.color = '#6b7280';
     src.textContent = 'Sources: ' + sources.map(s => `${s.tool}${s.args ? '(' + JSON.stringify(s.args) + ')' : ''}`).join(', ');
     div.appendChild(src);
   }
@@ -65,52 +59,55 @@ async function askJson(q) {
   return data;
 }
 
-function askStream(q) {
-  return new Promise((resolve, reject) => {
-    const qs = {};
-    if (LEAGUE_ID) qs.league_id = LEAGUE_ID;
-    const es = new EventSource(apiUrl('/api/ask/stream', { ...qs, question: q }));
-    const container = addMessage('bot', '');
-    es.onmessage = (e) => {
-      try {
-        const obj = JSON.parse(e.data);
-        if (obj.status === 'planning') {
-          container.textContent = 'Planning…';
-        } else if (obj.token) {
-          if (container.textContent === 'Planning…') container.textContent = '';
-          container.textContent += obj.token;
-        }
-      } catch {
-        container.textContent += e.data;
-      }
-    };
-    es.addEventListener('sources', (e) => {
-      try {
-        const sources = JSON.parse(e.data);
-        addMessage('bot', '', sources);
-      } catch {}
-    });
-    es.addEventListener('error', (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        addMessage('bot', 'Error: ' + (data?.error || 'stream error'));
-      } catch {
-        addMessage('bot', 'Stream error');
-      }
-      es.close();
-      reject(new Error('stream-error'));
-    });
-    es.addEventListener('end', () => {
-      es.close();
-      resolve();
-    });
-  });
+form?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const q = input.value.trim();
+  if (!q) return;
+  addMessage('user', q);
+  input.value = '';
+  const btn = form.querySelector('button');
+  btn.disabled = true;
+  try {
+    // Disable streaming by default to avoid timeouts on some hosts
+    const data = await askJson(q);
+    addMessage('bot', data.answer || 'No answer.', data.sources);
+  } catch (e2) {
+    addMessage('bot', 'Error: ' + (e2?.message || String(e2)));
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// Roster Drawer
+const openDrawerBtn = document.getElementById('open-rosters');
+const drawer = document.getElementById('drawer');
+const overlay = document.getElementById('drawer-overlay');
+const closeDrawerBtn = document.getElementById('close-drawer');
+const ownerSelect = document.getElementById('owner-select');
+const saveTeamBtn = document.getElementById('save-team');
+const rosterList = document.getElementById('roster-list');
+
+function showDrawer(show) {
+  if (!drawer || !overlay) return;
+  drawer.classList.toggle('hidden', !show);
+  overlay.classList.toggle('hidden', !show);
+}
+
+openDrawerBtn?.addEventListener('click', async ()=>{
+  await loadRosters();
+  showDrawer(true);
+});
+closeDrawerBtn?.addEventListener('click', ()=> showDrawer(false));
+overlay?.addEventListener('click', ()=> showDrawer(false));
+
+function playerThumbUrl(playerId) {
+  if (!playerId) return '';
+  return `https://sleepercdn.com/content/nfl/players/thumb/${playerId}.jpg`;
 }
 
 function rosterCard(r) {
   const card = document.createElement('div');
   card.className = 'roster-card';
-  if (myTeamName && r.owner === myTeamName) card.classList.add('mine');
   const title = document.createElement('div');
   title.className = 'title';
   title.textContent = r.owner;
@@ -123,10 +120,13 @@ function rosterCard(r) {
   badge.style.cursor = 'pointer';
   badge.addEventListener('click', async ()=>{
     badge.textContent = 'Loading…';
-    const params = LEAGUE_ID ? { league_id: LEAGUE_ID } : {};
+    const params = {};
+    if (LEAGUE_ID) params.league_id = LEAGUE_ID;
     const res = await fetch(apiUrl(`/api/rosters/${r.roster_id}`, params));
     const detail = await res.json();
     badge.textContent = 'View';
+    const existing = card.querySelector('.players');
+    if (existing) existing.remove();
     const list = document.createElement('div');
     list.className = 'players';
     const head = document.createElement('div');
@@ -136,7 +136,20 @@ function rosterCard(r) {
     (detail.starters||[]).forEach(p=>{
       const row = document.createElement('div');
       row.className = 'player';
-      row.innerHTML = `<span>${p.full_name}</span><span>${p.position||''} ${p.team||''}</span>`;
+      const left = document.createElement('div');
+      const img = document.createElement('img');
+      img.src = playerThumbUrl(p.player_id);
+      img.alt = p.full_name;
+      img.width = 22; img.height = 22; img.style.borderRadius = '50%'; img.style.marginRight = '6px';
+      left.appendChild(img);
+      const name = document.createElement('span');
+      name.textContent = p.full_name;
+      left.appendChild(name);
+      const right = document.createElement('span');
+      const proj = (p.projected_points != null) ? ` • ${p.projected_points.toFixed ? p.projected_points.toFixed(1) : p.projected_points} pts` : '';
+      right.textContent = `${p.position||''} ${p.team||''}${proj}`;
+      row.appendChild(left);
+      row.appendChild(right);
       list.appendChild(row);
     });
     const head2 = document.createElement('div');
@@ -147,11 +160,22 @@ function rosterCard(r) {
     (detail.bench||[]).forEach(p=>{
       const row = document.createElement('div');
       row.className = 'player';
-      row.innerHTML = `<span>${p.full_name}</span><span>${p.position||''} ${p.team||''}</span>`;
+      const left = document.createElement('div');
+      const img = document.createElement('img');
+      img.src = playerThumbUrl(p.player_id);
+      img.alt = p.full_name;
+      img.width = 22; img.height = 22; img.style.borderRadius = '50%'; img.style.marginRight = '6px';
+      left.appendChild(img);
+      const name = document.createElement('span');
+      name.textContent = p.full_name;
+      left.appendChild(name);
+      const right = document.createElement('span');
+      right.textContent = `${p.position||''} ${p.team||''}`;
+      row.appendChild(left);
+      row.appendChild(right);
       list.appendChild(row);
     });
-    const existing = card.querySelector('.players');
-    if (existing) existing.remove(); else card.appendChild(list);
+    card.appendChild(list);
   });
   title.appendChild(badge);
   card.appendChild(title);
@@ -160,32 +184,34 @@ function rosterCard(r) {
 }
 
 async function loadRosters() {
+  if (!rosterList) return;
   rosterList.innerHTML = 'Loading rosters…';
-  const params = LEAGUE_ID ? { league_id: LEAGUE_ID } : {};
+  const params = {};
+  if (LEAGUE_ID) params.league_id = LEAGUE_ID;
   const res = await fetch(apiUrl('/api/rosters', params));
+  if (!res.ok) {
+    const data = await res.json().catch(()=>({}));
+    rosterList.textContent = `Error loading rosters: ${data?.error || res.statusText}`;
+    return;
+  }
   const data = await res.json();
   if (!Array.isArray(data)) {
-    rosterList.textContent = 'Error loading rosters';
+    rosterList.textContent = 'No rosters found.';
     return;
   }
   ownerSelect.innerHTML = '';
-  const defaultName = 'Immigrants';
   data.forEach((r) => {
     const opt = document.createElement('option');
     opt.value = r.owner;
     opt.textContent = `${r.owner} (W-L-T: ${r.wins || 0}-${r.losses || 0}-${r.ties || 0})`;
     ownerSelect.appendChild(opt);
   });
-  const found = Array.from(ownerSelect.options).find(o => o.value.toLowerCase().includes(defaultName.toLowerCase()));
-  if (found) ownerSelect.value = found.value;
-
   rosterList.innerHTML = '';
   data.forEach((r) => rosterList.appendChild(rosterCard(r)));
 }
 
 async function saveMyTeam() {
   const owner_name = ownerSelect.value;
-  myTeamName = owner_name;
   try {
     await fetch(apiUrl('/api/my-team'), {
       method: 'POST',
@@ -193,10 +219,6 @@ async function saveMyTeam() {
       body: JSON.stringify({ owner_name })
     });
     addMessage('bot', `Saved your team as: ${owner_name}`);
-    Array.from(document.querySelectorAll('.roster-card')).forEach(card=>{
-      const name = card.querySelector('.title')?.childNodes[0]?.textContent || '';
-      card.classList.toggle('mine', name === myTeamName);
-    });
   } catch (e) {
     addMessage('bot', 'Error saving team');
   }
@@ -213,33 +235,98 @@ saveLeagueBtn?.addEventListener('click', () => {
   addMessage('bot', LEAGUE_ID ? `Using league: ${LEAGUE_ID}` : 'Cleared league ID');
 });
 
-loadBtn?.addEventListener('click', loadRosters);
 saveTeamBtn?.addEventListener('click', saveMyTeam);
 
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const q = input.value.trim();
-  if (!q) return;
-  addMessage('user', q);
-  input.value = '';
-  const btn = form.querySelector('button');
-  btn.disabled = true;
-  try {
-    const useStream = true;
-    if (useStream) {
-      await askStream(q);
-    } else {
-      const data = await askJson(q);
-      addMessage('bot', data.answer || 'No answer.', data.sources);
-    }
-  } catch (err) {
-    try {
-      const data = await askJson(q);
-      addMessage('bot', data.answer || 'No answer.', data.sources);
-    } catch (e2) {
-      addMessage('bot', 'Error: ' + (e2?.message || String(e2)));
-    }
-  } finally {
-    btn.disabled = false;
-  }
+// Projections
+const projBtn = document.getElementById('load-proj');
+const projList = document.getElementById('proj-list');
+projBtn?.addEventListener('click', async ()=>{
+  projList.innerHTML = 'Loading projections…';
+  const params = {};
+  if (LEAGUE_ID) params.league_id = LEAGUE_ID;
+  const res = await fetch(apiUrl('/api/projections', params));
+  const data = await res.json();
+  if (!res.ok) { projList.textContent = data?.error || 'Error.'; return; }
+  const items = data.projections || [];
+  projList.innerHTML = '';
+  items.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'roster-card';
+    card.innerHTML = `<div class="title">Roster ${p.roster_id}</div><div class="meta">Projected: ${p.projected_points ?? 'N/A'}</div>`;
+    projList.appendChild(card);
+  });
+});
+
+// News
+const newsBtn = document.getElementById('load-news');
+const newsList = document.getElementById('news-list');
+newsBtn?.addEventListener('click', async ()=>{
+  newsList.innerHTML = 'Loading news…';
+  const res = await fetch(apiUrl('/api/news', { user_id: 'default', lookback_hours: 48, limit: 25, league_id: LEAGUE_ID || '' }));
+  const data = await res.json();
+  if (!res.ok) { newsList.textContent = data?.error || 'Error.'; return; }
+  const items = data.rss || [];
+  newsList.innerHTML = '';
+  items.forEach(n => {
+    const div = document.createElement('div');
+    div.className = 'msg bot';
+    const a = document.createElement('a');
+    a.href = n.link; a.target = '_blank'; a.textContent = n.title;
+    const meta = document.createElement('div'); meta.className='meta'; meta.textContent = `${n.source} • ${n.published || ''}`;
+    div.appendChild(a); div.appendChild(meta);
+    newsList.appendChild(div);
+  });
+});
+
+// Trade Calculator
+const tradeAInput = document.getElementById('trade-a-search');
+const tradeASuggest = document.getElementById('trade-a-suggest');
+const tradeAList = document.getElementById('trade-a-list');
+const tradeBInput = document.getElementById('trade-b-search');
+const tradeBSuggest = document.getElementById('trade-b-suggest');
+const tradeBList = document.getElementById('trade-b-list');
+const tradeEvalBtn = document.getElementById('trade-eval');
+const tradeResult = document.getElementById('trade-result');
+let teamA = []; let teamB = [];
+
+function renderTradeList(listEl, arr) {
+  listEl.innerHTML = '';
+  arr.forEach((p, idx) => {
+    const item = document.createElement('div');
+    item.className = 'player';
+    item.innerHTML = `<span>${p.full_name} (${p.position||''} ${p.team||''})</span><button class='btn btn-secondary' data-idx='${idx}'>Remove</button>`;
+    item.querySelector('button').addEventListener('click', ()=>{
+      arr.splice(idx,1); renderTradeList(listEl, arr);
+    });
+    listEl.appendChild(item);
+  });
+}
+
+async function searchPlayers(q, suggestEl, onPick) {
+  suggestEl.innerHTML = '';
+  if (!q || q.length < 2) return;
+  const res = await fetch(apiUrl('/api/players/search', { q }));
+  const data = await res.json();
+  (data||[]).forEach(p => {
+    const item = document.createElement('div');
+    item.className = 'player';
+    item.textContent = `${p.full_name} (${p.position||''} ${p.team||''})`;
+    item.addEventListener('click', ()=>{ onPick(p); suggestEl.innerHTML=''; });
+    suggestEl.appendChild(item);
+  });
+}
+
+tradeAInput?.addEventListener('input', ()=> searchPlayers(tradeAInput.value, tradeASuggest, (p)=>{ teamA.push(p); renderTradeList(tradeAList, teamA); }));
+tradeBInput?.addEventListener('input', ()=> searchPlayers(tradeBInput.value, tradeBSuggest, (p)=>{ teamB.push(p); renderTradeList(tradeBList, teamB); }));
+
+tradeEvalBtn?.addEventListener('click', async ()=>{
+  tradeResult.innerHTML = 'Evaluating…';
+  const res = await fetch(apiUrl('/api/trade/evaluate'), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ teamA: teamA.map(p=>p.player_id), teamB: teamB.map(p=>p.player_id), league_id: LEAGUE_ID || undefined, provider: PROVIDER })
+  });
+  const data = await res.json();
+  if (!res.ok) { tradeResult.textContent = data?.error || 'Error.'; return; }
+  tradeResult.innerHTML = '';
+  addMessage('bot', data.narrative || 'Result shown above.');
 });

@@ -43,4 +43,15 @@
 
 .footer{padding:12px;color:var(--muted);text-align:center;border-top:1px solid var(--border);margin-top:20px}
 
+.drawer{position:fixed;top:0;right:0;width:360px;height:100%;background:var(--bg2);border-left:1px solid var(--border);box-shadow:-4px 0 24px rgba(0,0,0,.05);transform:translateX(0);transition:transform .2s ease;z-index:20}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.3);backdrop-filter:saturate(120%) blur(1px);z-index:15}
+.hidden{transform:translateX(100%);display:none}
+.drawer-header{display:flex;justify-content:space-between;align-items:center;padding:10px;border-bottom:1px solid var(--border)}
+.drawer-body{padding:10px;overflow:auto;height:calc(100% - 50px)}
+.trade-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.trade-col{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px}
+.suggest{border:1px solid var(--border);border-radius:8px;margin-top:6px;max-height:200px;overflow:auto}
+.player img{vertical-align:middle}
+.btn.btn-secondary{padding:6px 10px;border-radius:8px}
+
 @media (max-width:600px){.backend-override input{min-width:160px}}
