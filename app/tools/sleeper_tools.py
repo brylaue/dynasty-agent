@@ -109,3 +109,9 @@ async def get_player_news(player_name: str, limit: int = 3) -> Dict[str, Any]:
         if len(items) >= limit:
             break
     return {"player": match["full_name"], "items": items}
+
+@tool("resolve_players", return_direct=False)
+async def resolve_players(player_ids: List[str]) -> List[Dict[str, Any]]:
+    """Resolve a list of Sleeper player_ids into [{'player_id','full_name','position','team'}]."""
+    assert _sleeper_client is not None, "Sleeper client not set"
+    return await _sleeper_client.resolve_player_list(player_ids or [])

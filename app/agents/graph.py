@@ -166,6 +166,9 @@ async def fetch_context(state: AgentState) -> AgentState:
         matchups = await sleeper_tools.get_matchups.ainvoke({"week": week})
         sources.append({"tool": "get_matchups", "args": {"week": week}})
         starters_ids = my_team.get("starters", []) or []
+        # Resolve names for starters
+        starters_named = await sleeper_tools.resolve_players.ainvoke({"player_ids": starters_ids})
+        sources.append({"tool": "resolve_players", "args": {"count": len(starters_ids)}})
         proj_map: Dict[str, float] = {}
         for m in matchups:
             if m.get("roster_id") == my_team.get("roster_id"):
@@ -174,12 +177,17 @@ async def fetch_context(state: AgentState) -> AgentState:
                     if idx < len(sp) and sp[idx] is not None:
                         proj_map[pid] = float(sp[idx])
                 break
+        # Attach projections to named list
+        for s in starters_named:
+            pid = s.get("player_id")
+            if pid in proj_map:
+                s["projected_points"] = round(proj_map[pid], 2)
         data["my_team"] = {
             "owner": my_team.get("owner"),
             "roster_id": my_team.get("roster_id"),
             "wins": my_team.get("wins"),
             "losses": my_team.get("losses"),
-            "starters": starters_ids,
+            "starters": starters_named,
             "projected_points": sum(proj_map.values()) if proj_map else None,
             "num_players": len(my_team.get("players") or []),
         }
