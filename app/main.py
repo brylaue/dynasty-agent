@@ -14,6 +14,7 @@ from app.services.sleeper_client import SleeperClient
 from app.services.memory import MemoryStore, UserPreferences
 from app.services.providers import ProviderRouter, LeagueProvider
 from app.services.yahoo_client import YahooClient
+from app.services.news_aggregator import fetch_rss_news, filter_news_by_names
 
 load_dotenv()
 
@@ -117,12 +118,34 @@ async def api_projections(week: int | None = None, league_id: str | None = None,
 
 
 @app.get("/api/news")
-async def api_news(lookback_hours: int = 48, limit: int = 25, provider: str | None = LeagueProvider.SLEEPER):
+async def api_news(lookback_hours: int = 48, limit: int = 25, provider: str | None = LeagueProvider.SLEEPER, user_id: str = "default", league_id: str | None = None):
     try:
+        prefs = memory_store.get_preferences(user_id=user_id)
+        if not prefs.roster_owner_name:
+            return JSONResponse(status_code=400, content={"error": "Select your team first (My Team) to enable the news feed."})
         client = provider_router.get_client(provider or LeagueProvider.SLEEPER)
-        if hasattr(client, "get_trending_news"):
-            return await client.get_trending_news(lookback_hours=lookback_hours, limit=limit)
-        return {"adds": [], "drops": []}
+        # Get rosters and find the user's team players
+        rosters = await client.build_roster_summaries(league_id=league_id)
+        my_roster = next((r for r in rosters if (r.get('owner') or '').lower() == prefs.roster_owner_name.lower()), None)
+        team_players = set((my_roster or {}).get('players', []) or [])
+        # Pull trending adds/drops (proxy for FA chatter) and RSS, then filter by player names
+        trending = await client.get_trending_news(lookback_hours=lookback_hours, limit=limit) if hasattr(client, 'get_trending_news') else {"adds": [], "drops": []}
+        rss_items = await fetch_rss_news()
+        # Build name list from catalog
+        catalog = await client.get_players() if hasattr(client, 'get_players') else {}
+        names = []
+        for pid in team_players:
+            p = catalog.get(pid)
+            if p:
+                names.append(p.get('full_name') or ((p.get('first_name') or '') + ' ' + (p.get('last_name') or '')).strip())
+        # Also include top trending free agent names
+        for t in (trending.get('adds') or [])[:10]:
+            pid = t.get('player_id')
+            p = catalog.get(pid) if pid else None
+            if p:
+                names.append(p.get('full_name') or '')
+        filtered_rss = filter_news_by_names(rss_items, names)
+        return {"rss": filtered_rss[: limit], "trending": trending}
     except Exception as e:  # pragma: no cover
         return JSONResponse(status_code=500, content={"error": str(e)})
 
