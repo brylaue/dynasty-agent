@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fantasy Research Agent</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>Fantasy Research Agent</h1>
+    <p class="subtitle">League: {{ league_id }}</p>
+
+    <section id="chat">
+      <div id="messages"></div>
+    </section>
+
+    <form id="ask-form">
+      <input id="question" name="question" type="text" placeholder="Ask about trades, start/sit, waivers..." autocomplete="off" required />
+      <button type="submit">Ask</button>
+    </form>
+
+    <footer>
+      <small>Powered by Sleeper + LangGraph</small>
+    </footer>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
