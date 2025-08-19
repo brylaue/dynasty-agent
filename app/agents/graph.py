@@ -143,6 +143,12 @@ async def fetch_context(state: AgentState) -> AgentState:
         web = await web_tools.web_search.ainvoke({"query": query, "max_results": 5})
         data["web_results"] = web
         sources.append({"tool": "web_search", "args": {"query": query}})
+        # Add individual web result URLs to sources for hyperlink rendering
+        for item in (web or [])[:5]:
+            url = item.get("url") or item.get("link")
+            title = item.get("title") or url
+            if url:
+                sources.append({"tool": "web", "url": url, "title": title})
 
     # My team snapshot
     prefs = state.preferences or {}

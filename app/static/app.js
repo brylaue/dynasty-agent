@@ -40,7 +40,13 @@ function addMessage(role, text, sources) {
     src.style.marginTop = '6px';
     src.style.fontSize = '12px';
     src.style.color = '#6b7280';
-    src.textContent = 'Sources: ' + sources.map(s => `${s.tool}${s.args ? '(' + JSON.stringify(s.args) + ')' : ''}`).join(', ');
+    const parts = sources.map(s => {
+      if (s.url) {
+        return `<a href="${s.url}" target="_blank">${s.title || s.url}</a>`;
+      }
+      return `${s.tool}${s.args ? '(' + JSON.stringify(s.args) + ')' : ''}`;
+    });
+    src.innerHTML = 'Sources: ' + parts.join(', ');
     div.appendChild(src);
   }
   messages.appendChild(div);
