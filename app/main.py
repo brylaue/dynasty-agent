@@ -1,7 +1,7 @@
 import os
 import json
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Query, Response
+from fastapi import FastAPI, Request, Query, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -248,13 +248,12 @@ async def ask_agent_stream(question: str, user_id: str = "default", league_id: s
 
 
 @app.get("/api/me")
-async def api_me(user_id: str = VerifyAuth := verify_jwt_and_get_user_id):
+async def api_me(user_id: str = Depends(verify_jwt_and_get_user_id)):
     return {"user_id": user_id}
 
 
 @app.get("/api/prefs")
-async def get_prefs(user_id: str = None):
-    # Allow token to override user_id if present
+async def get_prefs(user_id: str = "default"):
     try:
         user_from_token = verify_jwt_and_get_user_id()
         user_id = user_from_token
@@ -271,10 +270,9 @@ class PrefsBody(BaseModel):
 
 
 @app.post("/api/prefs")
-async def set_prefs(body: PrefsBody, user_id: str = None):
+async def set_prefs(body: PrefsBody):
     try:
-        user_from_token = verify_jwt_and_get_user_id()
-        user_id = user_from_token
+        user_id = verify_jwt_and_get_user_id()
     except Exception:
         user_id = body.user_id or "default"
     prefs = UserPreferences(
