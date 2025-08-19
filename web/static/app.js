@@ -1,10 +1,16 @@
 let API_BASE = '';
+let LEAGUE_ID = localStorage.getItem('league_id') || '';
 const backendInput = document.getElementById('backend-base');
 const saveBackendBtn = document.getElementById('save-backend');
+const leagueInput = document.getElementById('league-id');
+const saveLeagueBtn = document.getElementById('save-league');
+if (leagueInput) leagueInput.value = LEAGUE_ID;
 
-function apiUrl(path) {
-  if (!API_BASE) return path;
-  return API_BASE.replace(/\/$/, '') + path;
+function apiUrl(path, params = {}) {
+  const urlBase = API_BASE ? API_BASE.replace(/\/$/, '') : '';
+  const search = new URLSearchParams(params).toString();
+  const full = (urlBase + path) + (search ? `?${search}` : '');
+  return full;
 }
 
 // Tabs
@@ -52,7 +58,7 @@ async function askJson(q) {
   const res = await fetch(apiUrl('/api/ask'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question: q })
+    body: JSON.stringify({ question: q, league_id: LEAGUE_ID || undefined })
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || 'Request failed');
@@ -61,7 +67,9 @@ async function askJson(q) {
 
 function askStream(q) {
   return new Promise((resolve, reject) => {
-    const es = new EventSource(apiUrl(`/api/ask/stream?question=${encodeURIComponent(q)}`));
+    const qs = {};
+    if (LEAGUE_ID) qs.league_id = LEAGUE_ID;
+    const es = new EventSource(apiUrl('/api/ask/stream', { ...qs, question: q }));
     const container = addMessage('bot', '');
     es.onmessage = (e) => {
       try {
@@ -115,7 +123,8 @@ function rosterCard(r) {
   badge.style.cursor = 'pointer';
   badge.addEventListener('click', async ()=>{
     badge.textContent = 'Loading…';
-    const res = await fetch(apiUrl(`/api/rosters/${r.roster_id}`));
+    const params = LEAGUE_ID ? { league_id: LEAGUE_ID } : {};
+    const res = await fetch(apiUrl(`/api/rosters/${r.roster_id}`, params));
     const detail = await res.json();
     badge.textContent = 'View';
     const list = document.createElement('div');
@@ -141,7 +150,6 @@ function rosterCard(r) {
       row.innerHTML = `<span>${p.full_name}</span><span>${p.position||''} ${p.team||''}</span>`;
       list.appendChild(row);
     });
-    // toggle
     const existing = card.querySelector('.players');
     if (existing) existing.remove(); else card.appendChild(list);
   });
@@ -153,7 +161,8 @@ function rosterCard(r) {
 
 async function loadRosters() {
   rosterList.innerHTML = 'Loading rosters…';
-  const res = await fetch(apiUrl('/api/rosters'));
+  const params = LEAGUE_ID ? { league_id: LEAGUE_ID } : {};
+  const res = await fetch(apiUrl('/api/rosters', params));
   const data = await res.json();
   if (!Array.isArray(data)) {
     rosterList.textContent = 'Error loading rosters';
@@ -184,7 +193,6 @@ async function saveMyTeam() {
       body: JSON.stringify({ owner_name })
     });
     addMessage('bot', `Saved your team as: ${owner_name}`);
-    // refresh highlight
     Array.from(document.querySelectorAll('.roster-card')).forEach(card=>{
       const name = card.querySelector('.title')?.childNodes[0]?.textContent || '';
       card.classList.toggle('mine', name === myTeamName);
@@ -197,6 +205,12 @@ async function saveMyTeam() {
 saveBackendBtn?.addEventListener('click', () => {
   API_BASE = (backendInput?.value || '').trim();
   addMessage('bot', API_BASE ? `Using backend: ${API_BASE}` : 'Using Netlify proxy');
+});
+
+saveLeagueBtn?.addEventListener('click', () => {
+  LEAGUE_ID = (leagueInput?.value || '').trim();
+  localStorage.setItem('league_id', LEAGUE_ID);
+  addMessage('bot', LEAGUE_ID ? `Using league: ${LEAGUE_ID}` : 'Cleared league ID');
 });
 
 loadBtn?.addEventListener('click', loadRosters);

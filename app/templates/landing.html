@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Start • Dynasty Agent</title>
+	<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+	<main class="page" style="max-width:600px;">
+		<h1>Welcome to Dynasty Agent</h1>
+		<p class="meta">Enter your Sleeper league ID to get started.</p>
+		<form id="league-form" class="composer" style="gap:8px;">
+			<input id="league-id" type="text" placeholder="Sleeper League ID" required />
+			<button class="btn btn-primary" type="submit">Continue</button>
+		</form>
+		<p class="meta">Tip: You can find your league ID in the Sleeper app under League → Settings → League ID.</p>
+	</main>
+	<script>
+		const form = document.getElementById('league-form');
+		const input = document.getElementById('league-id');
+		form.addEventListener('submit', (e)=>{
+			e.preventDefault();
+			const val = (input.value||'').trim();
+			if (!val) return;
+			localStorage.setItem('league_id', val);
+			window.location.href = '/';
+		});
+	</script>
+</body>
+</html>

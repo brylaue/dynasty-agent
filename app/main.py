@@ -36,6 +36,7 @@ memory_store = MemoryStore()
 class QueryBody(BaseModel):
     question: str
     user_id: str | None = "default"
+    league_id: str | None = None
 
 
 @app.get("/healthz")
@@ -60,9 +61,17 @@ async def home(request: Request):
     )
 
 
+@app.get("/start", response_class=HTMLResponse)
+async def start(request: Request):
+    return templates.TemplateResponse("landing.html", {"request": request})
+
+
 @app.get("/api/rosters")
-async def api_rosters():
+async def api_rosters(league_id: str | None = None):
     try:
+        if league_id:
+            temp_client = SleeperClient(default_league_id=league_id)
+            return await temp_client.build_roster_summaries()
         summaries = await sleeper_client.build_roster_summaries()
         return summaries
     except Exception as e:  # pragma: no cover
@@ -70,8 +79,11 @@ async def api_rosters():
 
 
 @app.get("/api/rosters/{roster_id}")
-async def api_roster_detail(roster_id: int):
+async def api_roster_detail(roster_id: int, league_id: str | None = None):
     try:
+        if league_id:
+            temp_client = SleeperClient(default_league_id=league_id)
+            return await temp_client.build_roster_detail(roster_id, league_id=league_id)
         detail = await sleeper_client.build_roster_detail(roster_id)
         return detail
     except Exception as e:  # pragma: no cover
@@ -97,7 +109,12 @@ async def ask_agent(body: QueryBody):
         if not OPENAI_API_KEY:
             return JSONResponse(status_code=400, content={"error": "OPENAI_API_KEY is not configured on the server."})
         prefs = memory_store.get_preferences(user_id=body.user_id or "default").model_dump(exclude_none=True)
-        result = await research_graph.ainvoke({"question": body.question, "preferences": prefs})
+        if body.league_id:
+            temp_client = SleeperClient(default_league_id=body.league_id)
+            temp_graph = create_research_graph(sleeper_client=temp_client)
+            result = await temp_graph.ainvoke({"question": body.question, "preferences": prefs})
+        else:
+            result = await research_graph.ainvoke({"question": body.question, "preferences": prefs})
         return {
             "answer": result.get("answer", "No answer produced."),
             "sources": result.get("sources", []),
@@ -109,7 +126,7 @@ async def ask_agent(body: QueryBody):
 
 
 @app.get("/api/ask/stream")
-async def ask_agent_stream(question: str, user_id: str = "default"):
+async def ask_agent_stream(question: str, user_id: str = "default", league_id: str | None = None):
     async def event_gen():
         try:
             if not OPENAI_API_KEY:
@@ -119,7 +136,12 @@ async def ask_agent_stream(question: str, user_id: str = "default"):
                 return
             prefs = memory_store.get_preferences(user_id=user_id).model_dump(exclude_none=True)
             yield f"data: {json.dumps({'status': 'planning'})}\n\n"
-            result = await research_graph.ainvoke({"question": question, "preferences": prefs})
+            if league_id:
+                temp_client = SleeperClient(default_league_id=league_id)
+                temp_graph = create_research_graph(sleeper_client=temp_client)
+                result = await temp_graph.ainvoke({"question": question, "preferences": prefs})
+            else:
+                result = await research_graph.ainvoke({"question": question, "preferences": prefs})
             answer = result.get("answer", "")
             sources = result.get("sources", [])
             chunk_size = 200
