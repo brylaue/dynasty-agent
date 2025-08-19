@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import httpx
 from authlib.integrations.httpx_client import OAuth1Client
@@ -10,7 +10,10 @@ from authlib.integrations.httpx_client import OAuth1Client
 class YahooClient:
 	"""Yahoo Fantasy Sports API client (OAuth1).
 
-	You'll need to set YAHOO_CLIENT_ID, YAHOO_CLIENT_SECRET, and configure callback.
+	Env:
+	- YAHOO_CLIENT_ID or YAHOO_CONSUMER_KEY
+	- YAHOO_CLIENT_SECRET or YAHOO_CONSUMER_SECRET
+	- YAHOO_REDIRECT_URI (e.g., https://your-backend/api/yahoo/callback)
 	"""
 
 	base_url: str = "https://fantasysports.yahooapis.com/fantasy/v2"
@@ -19,9 +22,14 @@ class YahooClient:
 	access_token_url: str = "https://api.login.yahoo.com/oauth/v2/get_token"
 
 	def __init__(self, token: Optional[Dict[str, Any]] = None) -> None:
-		self.client_id = os.getenv("YAHOO_CLIENT_ID")
-		self.client_secret = os.getenv("YAHOO_CLIENT_SECRET")
-		self.redirect_uri = os.getenv("YAHOO_REDIRECT_URI", "http://localhost:8000/api/yahoo/callback")
+		client_id = os.getenv("YAHOO_CLIENT_ID") or os.getenv("YAHOO_CONSUMER_KEY")
+		client_secret = os.getenv("YAHOO_CLIENT_SECRET") or os.getenv("YAHOO_CONSUMER_SECRET")
+		redirect_uri = os.getenv("YAHOO_REDIRECT_URI", "http://localhost:8000/api/yahoo/callback")
+		if not client_id or not client_secret:
+			raise RuntimeError("Yahoo credentials not configured: set YAHOO_CLIENT_ID/SECRET or YAHOO_CONSUMER_KEY/SECRET")
+		self.client_id = client_id
+		self.client_secret = client_secret
+		self.redirect_uri = redirect_uri
 		self._oauth = OAuth1Client(
 			client_id=self.client_id,
 			client_secret=self.client_secret,

@@ -41,7 +41,11 @@ sleeper_client = provider_router.sleeper
 research_graph = create_research_graph(sleeper_client=sleeper_client)
 memory_store = MemoryStore()
 
-YAHOO_ENABLED = os.getenv("YAHOO_ENABLED", "false").lower() == "true"
+YAHOO_ENABLED = (
+    os.getenv("YAHOO_ENABLED", "false").lower() == "true" or (
+        (os.getenv("YAHOO_CLIENT_ID") or os.getenv("YAHOO_CONSUMER_KEY")) and (os.getenv("YAHOO_CLIENT_SECRET") or os.getenv("YAHOO_CONSUMER_SECRET"))
+    )
+)
 
 
 class QueryBody(BaseModel):
