@@ -127,34 +127,39 @@ async def fetch_context(state: AgentState) -> AgentState:
     sources: List[Dict[str, Any]] = []
     data: Dict[str, Any] = {"preferences": state.preferences or {}}
 
-    # League profile and rosters
+    # League profile
     league = await sleeper_tools.get_league_info.ainvoke({})
     sources.append({"tool": "get_league_info", "args": {}})
     league_profile = _compute_league_profile(league)
     data["league_profile"] = league_profile
 
-    rosters = await sleeper_tools.get_rosters.ainvoke({})
-    data["rosters"] = rosters
-    sources.append({"tool": "get_rosters", "args": {}})
+    rosters: List[Dict[str, Any]] = []
 
-    # News/trending via web
-    if intent in {"trending"}:
+    # Web search only if Tavily is configured and intent is fresh-info
+    if intent in {"trending"} and os.getenv("TAVILY_API_KEY"):
         query = f"NFL fantasy trending adds drops week {league_profile.get('season','')}"
         web = await web_tools.web_search.ainvoke({"query": query, "max_results": 5})
-        data["web_results"] = web
-        sources.append({"tool": "web_search", "args": {"query": query}})
-        # Add individual web result URLs to sources for hyperlink rendering
-        for item in (web or [])[:5]:
-            url = item.get("url") or item.get("link")
-            title = item.get("title") or url
-            if url:
-                sources.append({"tool": "web", "url": url, "title": title})
+        if web:
+            data["web_results"] = web
+            sources.append({"tool": "web_search", "args": {"query": query}})
+            for item in (web or [])[:5]:
+                url = item.get("url") or item.get("link")
+                title = item.get("title") or url
+                if url:
+                    sources.append({"tool": "web", "url": url, "title": title})
+
+    # Determine if we need rosters now
+    needs_rosters = intent in {"rosters", "start_sit", "trade"} or (state.preferences or {}).get("roster_owner_name")
+    if needs_rosters:
+        rosters = await sleeper_tools.get_rosters.ainvoke({})
+        data["rosters"] = rosters
+        sources.append({"tool": "get_rosters", "args": {}})
 
     # My team snapshot
     prefs = state.preferences or {}
     owner_name = (prefs.get("roster_owner_name") or "").strip().lower()
     my_team = None
-    if owner_name:
+    if owner_name and rosters:
         for r in rosters:
             if str(r.get("owner") or "").strip().lower() == owner_name:
                 my_team = r
@@ -166,7 +171,6 @@ async def fetch_context(state: AgentState) -> AgentState:
         matchups = await sleeper_tools.get_matchups.ainvoke({"week": week})
         sources.append({"tool": "get_matchups", "args": {"week": week}})
         starters_ids = my_team.get("starters", []) or []
-        # Resolve names for starters
         starters_named = await sleeper_tools.resolve_players.ainvoke({"player_ids": starters_ids})
         sources.append({"tool": "resolve_players", "args": {"count": len(starters_ids)}})
         proj_map: Dict[str, float] = {}
@@ -177,7 +181,6 @@ async def fetch_context(state: AgentState) -> AgentState:
                     if idx < len(sp) and sp[idx] is not None:
                         proj_map[pid] = float(sp[idx])
                 break
-        # Attach projections to named list
         for s in starters_named:
             pid = s.get("player_id")
             if pid in proj_map:
@@ -196,8 +199,8 @@ async def fetch_context(state: AgentState) -> AgentState:
     if intent == "matchups":
         state_info = await sleeper_tools.get_nfl_state.ainvoke({})
         week = int(state_info.get("week") or 1)
-        matchups = await analysis.build_matchup_previews(await sleeper_tools.get_matchups.ainvoke({"week": week}))
-        data.update({"nfl_state": state_info, "matchup_previews": matchups})
+        previews = await analysis.build_matchup_previews(await sleeper_tools.get_matchups.ainvoke({"week": week}))
+        data.update({"nfl_state": state_info, "matchup_previews": previews})
         sources.extend([
             {"tool": "get_nfl_state", "args": {}},
             {"tool": "get_matchups", "args": {"week": week}},
@@ -226,13 +229,13 @@ async def fetch_context(state: AgentState) -> AgentState:
         sources.append({"tool": "get_trending_players", "args": {"trend_type": "add", "lookback_hours": 72, "limit": 50}})
 
     elif intent in {"start_sit", "trade"}:
-        # Reuse already-fetched rosters
-        data["rosters"] = rosters
+        if rosters:
+            data["rosters"] = rosters
         if intent == "start_sit":
-            data["start_sit"] = await analysis.suggest_start_sit(rosters)
+            data["start_sit"] = await analysis.suggest_start_sit(rosters or [])
         else:
             trending = await sleeper_tools.get_trending_players.ainvoke({"trend_type": "add", "lookback_hours": 48, "limit": 50})
-            data["trade_suggestions"] = await analysis.suggest_trade_targets(rosters, trending)
+            data["trade_suggestions"] = await analysis.suggest_trade_targets(rosters or [], trending)
             sources.append({"tool": "get_trending_players", "args": {"trend_type": "add", "lookback_hours": 48, "limit": 50}})
 
     t1 = time.perf_counter()

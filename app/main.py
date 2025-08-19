@@ -3,6 +3,7 @@ import json
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Query, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -31,6 +32,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=500)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
@@ -38,6 +40,8 @@ provider_router = ProviderRouter(default_league_id=LEAGUE_ID)
 sleeper_client = provider_router.sleeper
 research_graph = create_research_graph(sleeper_client=sleeper_client)
 memory_store = MemoryStore()
+
+YAHOO_ENABLED = os.getenv("YAHOO_ENABLED", "false").lower() == "true"
 
 
 class QueryBody(BaseModel):
@@ -80,7 +84,7 @@ async def api_health():
         "league_id": LEAGUE_ID,
         "openai_configured": bool(OPENAI_API_KEY),
         "model": OPENAI_MODEL,
-        "providers": [LeagueProvider.SLEEPER, LeagueProvider.YAHOO],
+        "providers": [LeagueProvider.SLEEPER] + ([LeagueProvider.YAHOO] if YAHOO_ENABLED else []),
     }
 
 
