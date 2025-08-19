@@ -136,7 +136,7 @@ async def fetch_context(state: AgentState) -> AgentState:
     data["rosters"] = rosters
     sources.append({"tool": "get_rosters", "args": {}})
 
-    # News/trending: perform a web search when intent indicates fresh info
+    # News/trending via web
     if intent in {"trending"}:
         query = f"NFL fantasy trending adds drops week {league_profile.get('season','')}"
         web = await web_tools.web_search.ainvoke({"query": query, "max_results": 5})
@@ -174,22 +174,15 @@ async def fetch_context(state: AgentState) -> AgentState:
             "losses": my_team.get("losses"),
             "starters": starters_ids,
             "projected_points": sum(proj_map.values()) if proj_map else None,
+            "num_players": len(my_team.get("players") or []),
         }
-        data["my_team"]["num_players"] = len(my_team.get("players") or [])
 
     # Intent-specific additions
-    if intent == "league_info":
-        pass  # league_profile already included
-
-    elif intent == "rosters":
-        pass
-
-    elif intent == "matchups":
+    if intent == "matchups":
         state_info = await sleeper_tools.get_nfl_state.ainvoke({})
         week = int(state_info.get("week") or 1)
-        matchups = await sleeper_tools.get_matchups.ainvoke({"week": week})
-        previews = await analysis.build_matchup_previews(matchups)
-        data.update({"nfl_state": state_info, "matchups": matchups, "matchup_previews": previews})
+        matchups = await analysis.build_matchup_previews(await sleeper_tools.get_matchups.ainvoke({"week": week}))
+        data.update({"nfl_state": state_info, "matchup_previews": matchups})
         sources.extend([
             {"tool": "get_nfl_state", "args": {}},
             {"tool": "get_matchups", "args": {"week": week}},
@@ -218,18 +211,13 @@ async def fetch_context(state: AgentState) -> AgentState:
         sources.append({"tool": "get_trending_players", "args": {"trend_type": "add", "lookback_hours": 72, "limit": 50}})
 
     elif intent in {"start_sit", "trade"}:
-        rosters2, nfl_state = await sleeper_tools.get_rosters.ainvoke({}), await sleeper_tools.get_nfl_state.ainvoke({})
-        data["rosters"] = rosters2
-        data["nfl_state"] = nfl_state
-        sources.extend([
-            {"tool": "get_rosters", "args": {}},
-            {"tool": "get_nfl_state", "args": {}},
-        ])
+        # Reuse already-fetched rosters
+        data["rosters"] = rosters
         if intent == "start_sit":
-            data["start_sit"] = await analysis.suggest_start_sit(rosters2)
+            data["start_sit"] = await analysis.suggest_start_sit(rosters)
         else:
             trending = await sleeper_tools.get_trending_players.ainvoke({"trend_type": "add", "lookback_hours": 48, "limit": 50})
-            data["trade_suggestions"] = await analysis.suggest_trade_targets(rosters2, trending)
+            data["trade_suggestions"] = await analysis.suggest_trade_targets(rosters, trending)
             sources.append({"tool": "get_trending_players", "args": {"trend_type": "add", "lookback_hours": 48, "limit": 50}})
 
     t1 = time.perf_counter()
