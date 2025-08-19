@@ -158,6 +158,26 @@ class SleeperClient:
 		bench_ids = [pid for pid in player_ids if pid not in starters_ids]
 		starters = await self.resolve_player_list(starters_ids)
 		bench = await self.resolve_player_list(bench_ids)
+		# Try to fetch this week's projected points for starters
+		proj_map: Dict[str, float] = {}
+		try:
+			state = await self.get_nfl_state()
+			week = int(state.get("week") or 1)
+			matchups = await self.get_matchups(week=week, league_id=league_id)
+			for m in matchups:
+				if m.get("roster_id") == roster_id:
+					sp = m.get("starters_points") or []
+					for idx, pid in enumerate(starters_ids):
+						if idx < len(sp) and sp[idx] is not None:
+							proj_map[pid] = float(sp[idx])
+					break
+		except Exception:
+			pass
+		# Attach projected points if available
+		for s in starters:
+			pp = proj_map.get(s.get("player_id"))
+			if pp is not None:
+				s["projected_points"] = round(pp, 2)
 		return {
 			"roster_id": roster_id,
 			"owner": owner,
