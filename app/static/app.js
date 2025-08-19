@@ -25,11 +25,13 @@ async function askJson(q) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question: q })
   });
-  return res.json();
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'Request failed');
+  return data;
 }
 
 function askStream(q) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const es = new EventSource(`/api/ask/stream?question=${encodeURIComponent(q)}`);
     const container = addMessage('bot', '');
     es.onmessage = (e) => {
@@ -51,14 +53,20 @@ function askStream(q) {
         addMessage('bot', '', sources);
       } catch {}
     });
+    es.addEventListener('error', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        addMessage('bot', 'Error: ' + (data?.error || 'stream error'));
+      } catch {
+        addMessage('bot', 'Stream error');
+      }
+      es.close();
+      reject(new Error('stream-error'));
+    });
     es.addEventListener('end', () => {
       es.close();
       resolve();
     });
-    es.onerror = () => {
-      es.close();
-      resolve();
-    };
   });
 }
 
@@ -79,7 +87,12 @@ form.addEventListener('submit', async (e) => {
       addMessage('bot', data.answer || 'No answer.', data.sources);
     }
   } catch (err) {
-    addMessage('bot', 'Error: ' + (err?.message || String(err)));
+    try {
+      const data = await askJson(q);
+      addMessage('bot', data.answer || 'No answer.', data.sources);
+    } catch (e2) {
+      addMessage('bot', 'Error: ' + (e2?.message || String(e2)));
+    }
   } finally {
     btn.disabled = false;
   }
