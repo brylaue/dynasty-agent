@@ -16,6 +16,40 @@ function addMessage(role, text, sources) {
   }
   messages.appendChild(div);
   messages.parentElement.scrollTop = messages.parentElement.scrollHeight;
+  return div;
+}
+
+async function askJson(q) {
+  const res = await fetch('/api/ask', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question: q })
+  });
+  return res.json();
+}
+
+function askStream(q) {
+  return new Promise((resolve) => {
+    const es = new EventSource(`/api/ask/stream?question=${encodeURIComponent(q)}`);
+    const container = addMessage('bot', '');
+    es.onmessage = (e) => {
+      container.textContent += e.data;
+    };
+    es.addEventListener('sources', (e) => {
+      try {
+        const sources = JSON.parse(e.data.replace(/^data: /, ''));
+        addMessage('bot', '', sources);
+      } catch {}
+    });
+    es.addEventListener('end', () => {
+      es.close();
+      resolve();
+    });
+    es.onerror = () => {
+      es.close();
+      resolve();
+    };
+  });
 }
 
 form.addEventListener('submit', async (e) => {
@@ -24,18 +58,19 @@ form.addEventListener('submit', async (e) => {
   if (!q) return;
   addMessage('user', q);
   input.value = '';
-  form.querySelector('button').disabled = true;
+  const btn = form.querySelector('button');
+  btn.disabled = true;
   try {
-    const res = await fetch('/api/ask', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: q })
-    });
-    const data = await res.json();
-    addMessage('bot', data.answer || 'No answer.', data.sources);
+    const useStream = true;
+    if (useStream) {
+      await askStream(q);
+    } else {
+      const data = await askJson(q);
+      addMessage('bot', data.answer || 'No answer.', data.sources);
+    }
   } catch (err) {
     addMessage('bot', 'Error: ' + (err?.message || String(err)));
   } finally {
-    form.querySelector('button').disabled = false;
+    btn.disabled = false;
   }
 });

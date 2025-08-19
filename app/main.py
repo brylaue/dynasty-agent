@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -47,4 +47,27 @@ async def ask_agent(body: QueryBody):
     return {
         "answer": result.get("answer", "No answer produced."),
         "sources": result.get("sources", []),
+        "intent": result.get("intent"),
+        "data_keys": list((result.get("data") or {}).keys()),
     }
+
+
+@app.get("/api/ask/stream")
+async def ask_agent_stream(question: str):
+    async def event_gen():
+        # Coarse-grained streaming: chunk in 4 phases
+        yield f"data: planning...\n\n"
+        result = await research_graph.ainvoke({"question": question})
+        answer = result.get("answer", "")
+        sources = result.get("sources", [])
+        # Stream the answer in chunks
+        chunk_size = 200
+        for i in range(0, len(answer), chunk_size):
+            yield f"data: {answer[i:i+chunk_size]}\n\n"
+        # Final sources
+        yield f"data: \n\n"
+        yield f"event: sources\n"
+        yield f"data: {sources}\n\n"
+        yield "event: end\n\n"
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
