@@ -2,6 +2,11 @@ const form = document.getElementById('ask-form');
 const input = document.getElementById('question');
 const messages = document.getElementById('messages');
 
+const loadBtn = document.getElementById('load-rosters');
+const ownerSelect = document.getElementById('owner-select');
+const saveTeamBtn = document.getElementById('save-team');
+const rosterList = document.getElementById('roster-list');
+
 function addMessage(role, text, sources) {
   const div = document.createElement('div');
   div.className = `msg ${role}`;
@@ -69,6 +74,62 @@ function askStream(q) {
     });
   });
 }
+
+async function loadRosters() {
+  rosterList.innerHTML = 'Loading rosters…';
+  const res = await fetch('/api/rosters');
+  const data = await res.json();
+  if (!Array.isArray(data)) {
+    rosterList.textContent = 'Error loading rosters';
+    return;
+  }
+  ownerSelect.innerHTML = '';
+  const defaultName = 'Immigrants';
+  data.forEach((r) => {
+    const opt = document.createElement('option');
+    opt.value = r.owner;
+    opt.textContent = `${r.owner} (W-L-T: ${r.wins || 0}-${r.losses || 0}-${r.ties || 0})`;
+    ownerSelect.appendChild(opt);
+  });
+  const found = Array.from(ownerSelect.options).find(o => o.value.toLowerCase().includes(defaultName.toLowerCase()));
+  if (found) ownerSelect.value = found.value;
+
+  // Render simple roster cards
+  rosterList.innerHTML = '';
+  data.forEach((r) => {
+    const card = document.createElement('div');
+    card.style.border = '1px solid #eee';
+    card.style.borderRadius = '8px';
+    card.style.padding = '8px';
+    card.style.marginBottom = '8px';
+    const h = document.createElement('div');
+    h.style.fontWeight = '600';
+    h.textContent = `${r.owner} • Roster ${r.roster_id}`;
+    const rec = document.createElement('div');
+    rec.style.color = '#666';
+    rec.textContent = `Record: ${r.wins || 0}-${r.losses || 0}-${r.ties || 0}`;
+    card.appendChild(h);
+    card.appendChild(rec);
+    rosterList.appendChild(card);
+  });
+}
+
+async function saveMyTeam() {
+  const owner_name = ownerSelect.value;
+  try {
+    await fetch('/api/my-team', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owner_name })
+    });
+    addMessage('bot', `Saved your team as: ${owner_name}`);
+  } catch (e) {
+    addMessage('bot', 'Error saving team');
+  }
+}
+
+loadBtn?.addEventListener('click', loadRosters);
+saveTeamBtn?.addEventListener('click', saveMyTeam);
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();

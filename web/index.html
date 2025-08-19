@@ -11,6 +11,16 @@
     <h1>Fantasy Research Agent</h1>
     <p class="subtitle">Hosted on Netlify • Backend proxied via /api • <a href="/api/health" target="_blank">API health</a></p>
 
+    <section id="rosters" style="margin-bottom:16px;">
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <button id="load-rosters" type="button">Load Rosters</button>
+        <label for="owner-select">My Team:</label>
+        <select id="owner-select"></select>
+        <button id="save-team" type="button">Save</button>
+      </div>
+      <div id="roster-list" style="margin-top:10px;"></div>
+    </section>
+
     <section id="chat">
       <div id="messages"></div>
     </section>

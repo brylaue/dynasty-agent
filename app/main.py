@@ -60,6 +60,37 @@ async def home(request: Request):
     )
 
 
+@app.get("/api/rosters")
+async def api_rosters():
+    try:
+        summaries = await sleeper_client.build_roster_summaries()
+        return summaries
+    except Exception as e:  # pragma: no cover
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/rosters/{roster_id}")
+async def api_roster_detail(roster_id: int):
+    try:
+        detail = await sleeper_client.build_roster_detail(roster_id)
+        return detail
+    except Exception as e:  # pragma: no cover
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+class SetTeamBody(BaseModel):
+    owner_name: str
+    user_id: str | None = "default"
+
+
+@app.post("/api/my-team")
+async def set_my_team(body: SetTeamBody):
+    prefs = memory_store.get_preferences(user_id=body.user_id or "default")
+    prefs.roster_owner_name = body.owner_name
+    memory_store.set_preferences(prefs, user_id=body.user_id or "default")
+    return {"ok": True}
+
+
 @app.post("/api/ask")
 async def ask_agent(body: QueryBody):
     try:
