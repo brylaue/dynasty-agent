@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Any, Dict, List, Optional
 
 from langgraph.graph import StateGraph, END
@@ -10,6 +11,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.tools import sleeper_tools
 from app.services import analysis
+from app.services.logging import append_agent_log
 
 
 class AgentState(BaseModel):
@@ -19,6 +21,7 @@ class AgentState(BaseModel):
     data: Dict[str, Any] = {}
     answer: Optional[str] = None
     sources: List[Dict[str, Any]] = []
+    timings: Dict[str, float] = {}
 
 
 SYSTEM_PROMPT = (
@@ -38,6 +41,7 @@ def _llm() -> ChatOpenAI:
 
 
 async def classify_intent(state: AgentState) -> AgentState:
+    t0 = time.perf_counter()
     llm = _llm()
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),
@@ -69,10 +73,19 @@ async def classify_intent(state: AgentState) -> AgentState:
             break
     if intent not in mapping.values():
         intent = "rosters"
-    return AgentState(question=state.question, preferences=state.preferences, intent=intent, data={}, sources=[])
+    t1 = time.perf_counter()
+    return AgentState(
+        question=state.question,
+        preferences=state.preferences,
+        intent=intent,
+        data={},
+        sources=[],
+        timings={"classify_s": t1 - t0},
+    )
 
 
 async def fetch_context(state: AgentState) -> AgentState:
+    t0 = time.perf_counter()
     intent = state.intent or "rosters"
     sources: List[Dict[str, Any]] = []
     data: Dict[str, Any] = {"preferences": state.preferences or {}}
@@ -135,10 +148,21 @@ async def fetch_context(state: AgentState) -> AgentState:
             data["trade_suggestions"] = await analysis.suggest_trade_targets(rosters, trending)
             sources.append({"tool": "get_trending_players", "args": {"trend_type": "add", "lookback_hours": 48, "limit": 50}})
 
-    return AgentState(question=state.question, preferences=state.preferences, intent=intent, data=data, sources=sources)
+    t1 = time.perf_counter()
+    timings = dict(state.timings)
+    timings["fetch_s"] = t1 - t0
+    return AgentState(
+        question=state.question,
+        preferences=state.preferences,
+        intent=intent,
+        data=data,
+        sources=sources,
+        timings=timings,
+    )
 
 
 async def synthesize(state: AgentState) -> AgentState:
+    t0 = time.perf_counter()
     llm = _llm()
     context_lines = [f"Intent: {state.intent}"]
     prefs = state.preferences or {}
@@ -156,13 +180,27 @@ async def synthesize(state: AgentState) -> AgentState:
         HumanMessage(content=f"Context:\n{context}\n\nQuestion: {state.question}"),
     ]
     result = await llm.ainvoke(messages)
+    t1 = time.perf_counter()
+    timings = dict(state.timings)
+    timings["synthesize_s"] = t1 - t0
+
+    answer = result.content or ""
+    append_agent_log(
+        question=state.question,
+        intent=state.intent,
+        preferences=state.preferences,
+        sources=state.sources,
+        timings=timings,
+    )
+
     return AgentState(
         question=state.question,
         preferences=state.preferences,
         intent=state.intent,
         data=state.data,
-        answer=result.content or "",
+        answer=answer,
         sources=state.sources,
+        timings=timings,
     )
 
 
