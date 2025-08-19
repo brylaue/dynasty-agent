@@ -37,6 +37,11 @@ class QueryBody(BaseModel):
     user_id: str | None = "default"
 
 
+@app.get("/healthz")
+async def healthz():
+    return {"ok": True}
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse(

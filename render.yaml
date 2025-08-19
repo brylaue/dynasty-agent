@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: dynasty-agent-backend
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: SLEEPER_LEAGUE_ID
+        value: "1180244317552857088"
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      # Set OPENAI_API_KEY in Render dashboard (secret)
