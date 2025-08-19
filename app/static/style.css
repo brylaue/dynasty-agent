@@ -1,30 +1,30 @@
-:root{--bg:#0f1220;--bg2:#171a2a;--text:#e7e9ee;--muted:#9aa3b2;--primary:#6ee7ff;--primary-2:#4cc2db;--card:#13162a;--border:#232843;--success:#22c55e;--warning:#f59e0b;--danger:#ef4444}
+:root{--bg:#f7f8fb;--bg2:#ffffff;--text:#0f172a;--muted:#6b7280;--primary:#2563eb;--primary-2:#1d4ed8;--card:#ffffff;--border:#e5e7eb;--success:#16a34a;--warning:#f59e0b;--danger:#dc2626}
 *{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
 .topbar{display:flex;align-items:center;padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
 .brand{font-weight:800;letter-spacing:.3px}
 .spacer{flex:1}
 .backend-override{display:flex;gap:8px;align-items:center}
-.backend-override input{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px;min-width:280px}
+.backend-override input{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px;min-width:220px}
 
-.tabs{display:flex;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);background:linear-gradient(0deg,transparent,rgba(255,255,255,.02))}
+.tabs{display:flex;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);background:linear-gradient(0deg,transparent,rgba(0,0,0,.02))}
 .tab{background:transparent;border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:999px;cursor:pointer}
 .tab.active{border-color:var(--primary);color:var(--primary)}
 
-.page{padding:14px;max-width:1000px;margin:0 auto}
+.page{padding:14px;max-width:1100px;margin:0 auto}
 .tab-panel{display:none}
 .tab-panel.show{display:block}
 
-.messages{display:flex;flex-direction:column;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:12px;min-height:50vh;padding:12px}
+.messages{display:flex;flex-direction:column;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:12px;min-height:40vh;padding:12px}
 .msg{padding:10px 12px;border-radius:10px;max-width:90%;white-space:pre-wrap;word-wrap:break-word}
-.msg.user{align-self:flex-end;background:#1e253f}
-.msg.bot{align-self:flex-start;background:#1a2036}
+.msg.user{align-self:flex-end;background:#e0ecff}
+.msg.bot{align-self:flex-start;background:#eef3ff}
 
 .composer{display:flex;gap:10px;margin-top:10px}
 .composer input{flex:1;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text)}
 
 .btn{border:none;border-radius:10px;padding:10px 14px;cursor:pointer}
-.btn-primary{background:var(--primary);color:#00111a}
-.btn-secondary{background:#28304f;color:#e7e9ee}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-secondary{background:#e5e7eb;color:#0f172a}
 .btn:disabled{opacity:.6}
 
 .toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
@@ -36,11 +36,11 @@
 .roster-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px}
 .roster-card .title{font-weight:700}
 .roster-card .meta{color:var(--muted);font-size:12px}
-.roster-card .badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#2a334f;color:#b8c2d9;font-size:12px;margin-left:6px}
+.roster-card .badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#1e3a8a;font-size:12px;margin-left:6px}
 .roster-card .players{margin-top:8px;border-top:1px solid var(--border);padding-top:8px}
-.roster-card .player{display:flex;justify-content:space-between;color:#cfd6e6;padding:4px 0;font-size:14px}
+.roster-card .player{display:flex;justify-content:space-between;color:#1f2937;padding:4px 0;font-size:14px}
 .roster-card.mine{border-color:var(--success)}
 
 .footer{padding:12px;color:var(--muted);text-align:center;border-top:1px solid var(--border);margin-top:20px}
 
-@media (max-width:600px){.backend-override input{min-width:180px}}
+@media (max-width:600px){.backend-override input{min-width:160px}}

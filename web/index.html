@@ -21,6 +21,8 @@
   <nav class="tabs">
     <button class="tab active" data-tab="chat">Chat</button>
     <button class="tab" data-tab="rosters">Rosters</button>
+    <button class="tab" data-tab="projections">Projections</button>
+    <button class="tab" data-tab="news">News</button>
   </nav>
 
   <main class="page">
@@ -43,6 +45,20 @@
         <a class="link" href="/api/health" target="_blank">API health</a>
       </div>
       <div id="roster-list" class="roster-grid"></div>
+    </section>
+
+    <section class="tab-panel" data-tab="projections">
+      <div class="toolbar">
+        <button id="load-proj" type="button" class="btn btn-primary">Load Projections</button>
+      </div>
+      <div id="proj-list" class="roster-grid"></div>
+    </section>
+
+    <section class="tab-panel" data-tab="news">
+      <div class="toolbar">
+        <button id="load-news" type="button" class="btn btn-primary">Load News</button>
+      </div>
+      <div id="news-list" class="messages"></div>
     </section>
   </main>
 

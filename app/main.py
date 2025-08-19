@@ -16,6 +16,7 @@ load_dotenv()
 
 LEAGUE_ID = os.getenv("SLEEPER_LEAGUE_ID", "1180244317552857088")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 app = FastAPI(title="Fantasy Research Agent")
 app.add_middleware(
@@ -50,6 +51,7 @@ async def api_health():
         "ok": True,
         "league_id": LEAGUE_ID,
         "openai_configured": bool(OPENAI_API_KEY),
+        "model": OPENAI_MODEL,
     }
 
 
@@ -86,6 +88,28 @@ async def api_roster_detail(roster_id: int, league_id: str | None = None):
             return await temp_client.build_roster_detail(roster_id, league_id=league_id)
         detail = await sleeper_client.build_roster_detail(roster_id)
         return detail
+    except Exception as e:  # pragma: no cover
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/projections")
+async def api_projections(week: int | None = None, league_id: str | None = None):
+    try:
+        if week is None:
+            state = await sleeper_client.get_nfl_state()
+            week = int(state.get("week") or 1)
+        client = sleeper_client if not league_id else SleeperClient(default_league_id=league_id)
+        proj = await client.build_weekly_projections(week=week, league_id=league_id)
+        return {"week": week, "projections": proj}
+    except Exception as e:  # pragma: no cover
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/news")
+async def api_news(lookback_hours: int = 48, limit: int = 25):
+    try:
+        news = await sleeper_client.get_trending_news(lookback_hours=lookback_hours, limit=limit)
+        return news
     except Exception as e:  # pragma: no cover
         return JSONResponse(status_code=500, content={"error": str(e)})
 
