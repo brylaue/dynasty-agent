@@ -8,14 +8,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# System deps (optional, minimal)
+# System deps for building Python wheels
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
-    curl ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+    build-essential \
+    gcc \
+    libffi-dev \
+    curl \
+    ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install
 COPY requirements.txt ./
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN python -m pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy app code
 COPY app ./app
