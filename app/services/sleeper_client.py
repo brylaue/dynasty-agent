@@ -25,9 +25,21 @@ class SleeperClient:
 
 	async def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
 		url = f"{self.base_url}{path}"
-		resp = await self._client.get(url, params=params)
-		resp.raise_for_status()
-		return resp.json()
+		attempts = 0
+		backoff = 0.5
+		while True:
+			try:
+				resp = await self._client.get(url, params=params)
+				resp.raise_for_status()
+				return resp.json()
+			except httpx.HTTPStatusError as e:
+				status = e.response.status_code if e.response is not None else 0
+				if status in (429, 500, 502, 503, 504) and attempts < 3:
+					await asyncio.sleep(backoff)
+					attempts += 1
+					backoff *= 2
+					continue
+				raise
 
 	async def _cached(self, key: str, ttl_s: float, fetch: Callable[[], Awaitable[Any]], *, force_refresh: bool = False) -> Any:
 		now = time.time()
@@ -59,6 +71,11 @@ class SleeperClient:
 		league_id = league_id or self.default_league_id
 		key = f"matchups:{league_id}:{week}"
 		return await self._cached(key, 120.0, lambda: self._get(f"/league/{league_id}/matchups/{week}"), force_refresh=force_refresh)
+
+	async def get_transactions(self, week: int, league_id: Optional[str] = None, *, force_refresh: bool = False) -> List[Dict[str, Any]]:
+		league_id = league_id or self.default_league_id
+		key = f"transactions:{league_id}:{week}"
+		return await self._cached(key, 300.0, lambda: self._get(f"/league/{league_id}/transactions/{week}"), force_refresh=force_refresh)
 
 	async def get_nfl_state(self, *, force_refresh: bool = False) -> Dict[str, Any]:
 		key = "state:nfl"
@@ -106,7 +123,6 @@ class SleeperClient:
 				return await self._get(f"/players/trending/{sport}/{trend_type}", params=params)
 			except httpx.HTTPStatusError as e:
 				if e.response is not None and e.response.status_code == 404:
-					# Fallback to alternate path some docs reference
 					try:
 						return await self._get(f"/trending/{sport}/{trend_type}", params=params)
 					except Exception:
@@ -173,7 +189,6 @@ class SleeperClient:
 					break
 		except Exception:
 			pass
-		# Attach projected points if available
 		for s in starters:
 			pp = proj_map.get(s.get("player_id"))
 			if pp is not None:
