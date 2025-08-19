@@ -2,10 +2,10 @@
   publish = "web"
   command = ""
 
-# Proxy API calls to your backend FastAPI server
+# Proxy API calls to your Render backend FastAPI server
 [[redirects]]
   from = "/api/*"
-  to = "https://dynasty-agent-backend.fly.dev/api/:splat"
+  to = "https://dynasty-agent-backend.onrender.com/api/:splat"
   status = 200
   force = true
 
