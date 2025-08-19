@@ -3,18 +3,33 @@ const backendInput = document.getElementById('backend-base');
 const saveBackendBtn = document.getElementById('save-backend');
 
 function apiUrl(path) {
-  if (!API_BASE) return path; // use proxy
+  if (!API_BASE) return path;
   return API_BASE.replace(/\/$/, '') + path;
 }
 
+// Tabs
+const tabs = document.querySelectorAll('.tab');
+const panels = document.querySelectorAll('.tab-panel');
+tabs.forEach((t)=>{
+  t.addEventListener('click',()=>{
+    tabs.forEach(x=>x.classList.remove('active'));
+    panels.forEach(p=>p.classList.remove('show'));
+    t.classList.add('active');
+    document.querySelector(`.tab-panel[data-tab="${t.dataset.tab}"]`).classList.add('show');
+  });
+});
+
+// Chat
 const form = document.getElementById('ask-form');
 const input = document.getElementById('question');
 const messages = document.getElementById('messages');
 
+// Rosters
 const loadBtn = document.getElementById('load-rosters');
 const ownerSelect = document.getElementById('owner-select');
 const saveTeamBtn = document.getElementById('save-team');
 const rosterList = document.getElementById('roster-list');
+let myTeamName = '';
 
 function addMessage(role, text, sources) {
   const div = document.createElement('div');
@@ -24,7 +39,7 @@ function addMessage(role, text, sources) {
     const src = document.createElement('div');
     src.style.marginTop = '6px';
     src.style.fontSize = '12px';
-    src.style.color = '#666';
+    src.style.color = '#9aa3b2';
     src.textContent = 'Sources: ' + sources.map(s => `${s.tool}${s.args ? '(' + JSON.stringify(s.args) + ')' : ''}`).join(', ');
     div.appendChild(src);
   }
@@ -84,6 +99,58 @@ function askStream(q) {
   });
 }
 
+function rosterCard(r) {
+  const card = document.createElement('div');
+  card.className = 'roster-card';
+  if (myTeamName && r.owner === myTeamName) card.classList.add('mine');
+  const title = document.createElement('div');
+  title.className = 'title';
+  title.textContent = r.owner;
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.textContent = `Roster ${r.roster_id} • Record ${r.wins||0}-${r.losses||0}-${r.ties||0}`;
+  const badge = document.createElement('span');
+  badge.className = 'badge';
+  badge.textContent = 'View';
+  badge.style.cursor = 'pointer';
+  badge.addEventListener('click', async ()=>{
+    badge.textContent = 'Loading…';
+    const res = await fetch(apiUrl(`/api/rosters/${r.roster_id}`));
+    const detail = await res.json();
+    badge.textContent = 'View';
+    const list = document.createElement('div');
+    list.className = 'players';
+    const head = document.createElement('div');
+    head.className = 'meta';
+    head.textContent = 'Starters';
+    list.appendChild(head);
+    (detail.starters||[]).forEach(p=>{
+      const row = document.createElement('div');
+      row.className = 'player';
+      row.innerHTML = `<span>${p.full_name}</span><span>${p.position||''} ${p.team||''}</span>`;
+      list.appendChild(row);
+    });
+    const head2 = document.createElement('div');
+    head2.className = 'meta';
+    head2.style.marginTop = '6px';
+    head2.textContent = 'Bench';
+    list.appendChild(head2);
+    (detail.bench||[]).forEach(p=>{
+      const row = document.createElement('div');
+      row.className = 'player';
+      row.innerHTML = `<span>${p.full_name}</span><span>${p.position||''} ${p.team||''}</span>`;
+      list.appendChild(row);
+    });
+    // toggle
+    const existing = card.querySelector('.players');
+    if (existing) existing.remove(); else card.appendChild(list);
+  });
+  title.appendChild(badge);
+  card.appendChild(title);
+  card.appendChild(meta);
+  return card;
+}
+
 async function loadRosters() {
   rosterList.innerHTML = 'Loading rosters…';
   const res = await fetch(apiUrl('/api/rosters'));
@@ -104,26 +171,12 @@ async function loadRosters() {
   if (found) ownerSelect.value = found.value;
 
   rosterList.innerHTML = '';
-  data.forEach((r) => {
-    const card = document.createElement('div');
-    card.style.border = '1px solid #eee';
-    card.style.borderRadius = '8px';
-    card.style.padding = '8px';
-    card.style.marginBottom = '8px';
-    const h = document.createElement('div');
-    h.style.fontWeight = '600';
-    h.textContent = `${r.owner} • Roster ${r.roster_id}`;
-    const rec = document.createElement('div');
-    rec.style.color = '#666';
-    rec.textContent = `Record: ${r.wins || 0}-${r.losses || 0}-${r.ties || 0}`;
-    card.appendChild(h);
-    card.appendChild(rec);
-    rosterList.appendChild(card);
-  });
+  data.forEach((r) => rosterList.appendChild(rosterCard(r)));
 }
 
 async function saveMyTeam() {
   const owner_name = ownerSelect.value;
+  myTeamName = owner_name;
   try {
     await fetch(apiUrl('/api/my-team'), {
       method: 'POST',
@@ -131,6 +184,11 @@ async function saveMyTeam() {
       body: JSON.stringify({ owner_name })
     });
     addMessage('bot', `Saved your team as: ${owner_name}`);
+    // refresh highlight
+    Array.from(document.querySelectorAll('.roster-card')).forEach(card=>{
+      const name = card.querySelector('.title')?.childNodes[0]?.textContent || '';
+      card.classList.toggle('mine', name === myTeamName);
+    });
   } catch (e) {
     addMessage('bot', 'Error saving team');
   }
@@ -144,14 +202,13 @@ saveBackendBtn?.addEventListener('click', () => {
 loadBtn?.addEventListener('click', loadRosters);
 saveTeamBtn?.addEventListener('click', saveMyTeam);
 
-const formEl = document.getElementById('ask-form');
-formEl.addEventListener('submit', async (e) => {
+form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const q = input.value.trim();
   if (!q) return;
   addMessage('user', q);
   input.value = '';
-  const btn = formEl.querySelector('button');
+  const btn = form.querySelector('button');
   btn.disabled = true;
   try {
     const useStream = true;

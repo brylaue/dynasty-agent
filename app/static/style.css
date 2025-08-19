@@ -1,15 +1,46 @@
-* { box-sizing: border-box; }
-body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; color: #111; background: #fafafa; }
-.container { max-width: 720px; margin: 0 auto; padding: 16px; }
-h1 { font-size: 22px; margin: 8px 0; }
-.subtitle { color: #666; margin: 0 0 16px 0; }
-#chat { border: 1px solid #eee; background: #fff; border-radius: 8px; padding: 12px; min-height: 40vh; display: flex; flex-direction: column; }
-#messages { display: flex; flex-direction: column; gap: 10px; }
-.msg { padding: 10px 12px; border-radius: 10px; max-width: 100%; white-space: pre-wrap; word-wrap: break-word; }
-.msg.user { background: #e9f3ff; align-self: flex-end; }
-.msg.bot { background: #f2f2f2; align-self: flex-start; }
-form { display: flex; gap: 8px; margin-top: 12px; }
-input[type="text"] { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #ccc; font-size: 16px; }
-button { padding: 12px 16px; border: none; border-radius: 8px; background: #0d6efd; color: #fff; font-weight: 600; font-size: 16px; }
-button:disabled { opacity: 0.6; }
-footer { color: #888; margin-top: 18px; }
+:root{--bg:#0f1220;--bg2:#171a2a;--text:#e7e9ee;--muted:#9aa3b2;--primary:#6ee7ff;--primary-2:#4cc2db;--card:#13162a;--border:#232843;--success:#22c55e;--warning:#f59e0b;--danger:#ef4444}
+*{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+.topbar{display:flex;align-items:center;padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+.brand{font-weight:800;letter-spacing:.3px}
+.spacer{flex:1}
+.backend-override{display:flex;gap:8px;align-items:center}
+.backend-override input{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px;min-width:280px}
+
+.tabs{display:flex;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);background:linear-gradient(0deg,transparent,rgba(255,255,255,.02))}
+.tab{background:transparent;border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:999px;cursor:pointer}
+.tab.active{border-color:var(--primary);color:var(--primary)}
+
+.page{padding:14px;max-width:1000px;margin:0 auto}
+.tab-panel{display:none}
+.tab-panel.show{display:block}
+
+.messages{display:flex;flex-direction:column;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:12px;min-height:50vh;padding:12px}
+.msg{padding:10px 12px;border-radius:10px;max-width:90%;white-space:pre-wrap;word-wrap:break-word}
+.msg.user{align-self:flex-end;background:#1e253f}
+.msg.bot{align-self:flex-start;background:#1a2036}
+
+.composer{display:flex;gap:10px;margin-top:10px}
+.composer input{flex:1;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text)}
+
+.btn{border:none;border-radius:10px;padding:10px 14px;cursor:pointer}
+.btn-primary{background:var(--primary);color:#00111a}
+.btn-secondary{background:#28304f;color:#e7e9ee}
+.btn:disabled{opacity:.6}
+
+.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.my-team{display:flex;gap:8px;align-items:center}
+.my-team select{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px}
+.link{color:var(--primary)}
+
+.roster-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.roster-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px}
+.roster-card .title{font-weight:700}
+.roster-card .meta{color:var(--muted);font-size:12px}
+.roster-card .badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#2a334f;color:#b8c2d9;font-size:12px;margin-left:6px}
+.roster-card .players{margin-top:8px;border-top:1px solid var(--border);padding-top:8px}
+.roster-card .player{display:flex;justify-content:space-between;color:#cfd6e6;padding:4px 0;font-size:14px}
+.roster-card.mine{border-color:var(--success)}
+
+.footer{padding:12px;color:var(--muted);text-align:center;border-top:1px solid var(--border);margin-top:20px}
+
+@media (max-width:600px){.backend-override input{min-width:180px}}

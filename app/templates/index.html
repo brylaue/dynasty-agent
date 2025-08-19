@@ -1,30 +1,53 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Fantasy Research Agent</title>
-  <link rel="stylesheet" href="/static/style.css" />
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Dynasty Agent</title>
+	<link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <main class="container">
-    <h1>Fantasy Research Agent</h1>
-    <p class="subtitle">League: {{ league_id }}</p>
+	<header class="topbar">
+		<div class="brand">Dynasty Agent</div>
+		<div class="spacer"></div>
+		<div class="backend-override">
+			<input id="backend-base" type="url" placeholder="https://dynasty-agent-backend.onrender.com" />
+			<button id="save-backend" type="button" class="btn btn-secondary">Use</button>
+		</div>
+	</header>
 
-    <section id="chat">
-      <div id="messages"></div>
-    </section>
+	<nav class="tabs">
+		<button class="tab active" data-tab="chat">Chat</button>
+		<button class="tab" data-tab="rosters">Rosters</button>
+	</nav>
 
-    <form id="ask-form">
-      <input id="question" name="question" type="text" placeholder="Ask about trades, start/sit, waivers..." autocomplete="off" required />
-      <button type="submit">Ask</button>
-    </form>
+	<main class="page">
+		<section class="tab-panel show" data-tab="chat">
+			<div id="messages" class="messages"></div>
+			<form id="ask-form" class="composer">
+				<input id="question" name="question" type="text" placeholder="Ask about trades, start/sit, waivers..." autocomplete="off" required />
+				<button type="submit" class="btn btn-primary">Ask</button>
+			</form>
+		</section>
 
-    <footer>
-      <small>Powered by Sleeper + LangGraph</small>
-    </footer>
-  </main>
+		<section class="tab-panel" data-tab="rosters">
+			<div class="toolbar">
+				<button id="load-rosters" type="button" class="btn btn-primary">Load Rosters</button>
+				<div class="my-team">
+					<label for="owner-select">My Team</label>
+					<select id="owner-select"></select>
+					<button id="save-team" type="button" class="btn btn-secondary">Save</button>
+				</div>
+				<a class="link" href="/api/health" target="_blank">API health</a>
+			</div>
+			<div id="roster-list" class="roster-grid"></div>
+		</section>
+	</main>
 
-  <script src="/static/app.js"></script>
+	<footer class="footer">
+		<small>Powered by Sleeper + LangGraph • <span id="status-text"></span></small>
+	</footer>
+
+	<script src="/static/app.js"></script>
 </body>
 </html>
