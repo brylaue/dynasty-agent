@@ -1,9 +1,9 @@
 import os
 import json
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -11,12 +11,14 @@ from pydantic import BaseModel
 from app.agents.graph import create_research_graph
 from app.services.sleeper_client import SleeperClient
 from app.services.memory import MemoryStore, UserPreferences
+from app.services.providers import ProviderRouter, LeagueProvider
+from app.services.yahoo_client import YahooClient
 
 load_dotenv()
 
 LEAGUE_ID = os.getenv("SLEEPER_LEAGUE_ID", "1180244317552857088")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 app = FastAPI(title="Fantasy Research Agent")
 app.add_middleware(
@@ -29,7 +31,8 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
-sleeper_client = SleeperClient(default_league_id=LEAGUE_ID)
+provider_router = ProviderRouter(default_league_id=LEAGUE_ID)
+sleeper_client = provider_router.sleeper
 research_graph = create_research_graph(sleeper_client=sleeper_client)
 memory_store = MemoryStore()
 
@@ -38,11 +41,24 @@ class QueryBody(BaseModel):
     question: str
     user_id: str | None = "default"
     league_id: str | None = None
+    provider: str | None = LeagueProvider.SLEEPER
 
 
-@app.get("/healthz")
-async def healthz():
-    return {"ok": True}
+@app.get("/api/yahoo/auth")
+async def yahoo_auth_start():
+    yc = YahooClient()
+    token = await yc.get_request_token()
+    url = yc.get_authorize_url(token)
+    return RedirectResponse(url)
+
+
+@app.get("/api/yahoo/callback")
+async def yahoo_auth_callback(oauth_verifier: str = Query(...)):
+    yc = YahooClient()
+    token = await yc.fetch_access_token(oauth_verifier)
+    # TODO: persist token (session/db) and set provider_router.yahoo
+    provider_router.yahoo = YahooClient(token=token)
+    return RedirectResponse("/app")
 
 
 @app.get("/api/health")
@@ -52,6 +68,7 @@ async def api_health():
         "league_id": LEAGUE_ID,
         "openai_configured": bool(OPENAI_API_KEY),
         "model": OPENAI_MODEL,
+        "providers": [LeagueProvider.SLEEPER, LeagueProvider.YAHOO],
     }
 
 
@@ -66,47 +83,45 @@ async def app_page(request: Request):
 
 
 @app.get("/api/rosters")
-async def api_rosters(league_id: str | None = None):
+async def api_rosters(league_id: str | None = None, provider: str | None = LeagueProvider.SLEEPER):
     try:
-        if league_id:
-            temp_client = SleeperClient(default_league_id=league_id)
-            return await temp_client.build_roster_summaries()
-        summaries = await sleeper_client.build_roster_summaries()
-        return summaries
+        client = provider_router.get_client(provider or LeagueProvider.SLEEPER)
+        if provider == LeagueProvider.SLEEPER and league_id:
+            client = SleeperClient(default_league_id=league_id)
+        return await client.build_roster_summaries(league_id=league_id)
     except Exception as e:  # pragma: no cover
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.get("/api/rosters/{roster_id}")
-async def api_roster_detail(roster_id: int, league_id: str | None = None):
+async def api_roster_detail(roster_id: int, league_id: str | None = None, provider: str | None = LeagueProvider.SLEEPER):
     try:
-        if league_id:
-            temp_client = SleeperClient(default_league_id=league_id)
-            return await temp_client.build_roster_detail(roster_id, league_id=league_id)
-        detail = await sleeper_client.build_roster_detail(roster_id)
-        return detail
+        client = provider_router.get_client(provider or LeagueProvider.SLEEPER)
+        return await client.build_roster_detail(roster_id, league_id=league_id)
     except Exception as e:  # pragma: no cover
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.get("/api/projections")
-async def api_projections(week: int | None = None, league_id: str | None = None):
+async def api_projections(week: int | None = None, league_id: str | None = None, provider: str | None = LeagueProvider.SLEEPER):
     try:
-        if week is None:
-            state = await sleeper_client.get_nfl_state()
+        client = provider_router.get_client(provider or LeagueProvider.SLEEPER)
+        if week is None and hasattr(client, "get_nfl_state"):
+            state = await client.get_nfl_state()
             week = int(state.get("week") or 1)
-        client = sleeper_client if not league_id else SleeperClient(default_league_id=league_id)
-        proj = await client.build_weekly_projections(week=week, league_id=league_id)
-        return {"week": week, "projections": proj}
+        week = week or 1
+        return {"week": week, "projections": await client.build_weekly_projections(week=week, league_id=league_id)}
     except Exception as e:  # pragma: no cover
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.get("/api/news")
-async def api_news(lookback_hours: int = 48, limit: int = 25):
+async def api_news(lookback_hours: int = 48, limit: int = 25, provider: str | None = LeagueProvider.SLEEPER):
     try:
-        news = await sleeper_client.get_trending_news(lookback_hours=lookback_hours, limit=limit)
-        return news
+        client = provider_router.get_client(provider or LeagueProvider.SLEEPER)
+        if hasattr(client, "get_trending_news"):
+            return await client.get_trending_news(lookback_hours=lookback_hours, limit=limit)
+        return {"adds": [], "drops": []}
     except Exception as e:  # pragma: no cover
         return JSONResponse(status_code=500, content={"error": str(e)})
 
@@ -130,7 +145,7 @@ async def ask_agent(body: QueryBody):
         if not OPENAI_API_KEY:
             return JSONResponse(status_code=400, content={"error": "OPENAI_API_KEY is not configured on the server."})
         prefs = memory_store.get_preferences(user_id=body.user_id or "default").model_dump(exclude_none=True)
-        if body.league_id:
+        if body.league_id and body.provider == LeagueProvider.SLEEPER:
             temp_client = SleeperClient(default_league_id=body.league_id)
             temp_graph = create_research_graph(sleeper_client=temp_client)
             result = await temp_graph.ainvoke({"question": body.question, "preferences": prefs})
