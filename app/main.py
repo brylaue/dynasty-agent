@@ -1,7 +1,7 @@
 import os
 import json
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Query
+from fastapi import FastAPI, Request, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -154,6 +154,22 @@ class SetTeamBody(BaseModel):
     owner_name: str | None = None
     roster_id: int | None = None
     user_id: str | None = "default"
+
+
+@app.options("/api/my-team")
+async def options_my_team():
+    return Response(status_code=204)
+
+
+@app.get("/api/my-team")
+async def set_my_team_get(owner_name: str | None = None, roster_id: int | None = None, user_id: str = "default"):
+    prefs = memory_store.get_preferences(user_id=user_id or "default")
+    if owner_name:
+        prefs.roster_owner_name = owner_name
+    if roster_id is not None:
+        setattr(prefs, "roster_id", roster_id)
+    memory_store.set_preferences(prefs, user_id=user_id or "default")
+    return {"ok": True}
 
 
 @app.post("/api/my-team")

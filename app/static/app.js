@@ -219,11 +219,9 @@ async function saveMyTeam() {
   MY_TEAM = owner_name;
   localStorage.setItem('my_team', owner_name);
   try {
-    await fetch(apiUrl('/api/my-team'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ owner_name })
-    });
+    const url = apiUrl('/api/my-team', { owner_name, user_id: 'default' });
+    const res = await fetch(url, { method: 'GET' });
+    if (!res.ok) throw new Error('Failed to save');
     addMessage('bot', `Saved your team as: ${owner_name}`);
   } catch (e) {
     addMessage('bot', 'Error saving team');
