@@ -4,46 +4,27 @@
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title>Dynasty Agent</title>
-	<link rel="stylesheet" href="/static/style.css" />
+	<link rel="stylesheet" href="/static/style.css?v=20250819" />
 </head>
 <body>
 	<header class="topbar">
 		<div class="brand">Dynasty Agent</div>
 	</header>
 	<main class="page" style="max-width:720px;">
-		<h1>Fantasy research, tailored to your league</h1>
-		<p class="meta">Select your platform and enter your League ID (for Sleeper). Yahoo requires a quick connect.</p>
-		<div class="toolbar">
-			<label>Provider</label>
-			<select id="provider">
-				<option value="sleeper">Sleeper</option>
-				<option value="yahoo">Yahoo</option>
-			</select>
-			<a id="yahoo-connect" class="btn btn-secondary" href="/api/yahoo/auth">Connect Yahoo</a>
-		</div>
+		<h1>Fantasy research, tailored to your Sleeper league</h1>
+		<p class="meta">Enter your Sleeper League ID to spin up a personalized research workspace with rosters, projections, trending news, and an AI chat tuned to your league.</p>
 		<form id="landing-form" class="composer" style="gap:8px;">
-			<input id="landing-league" type="text" placeholder="Sleeper League ID" />
+			<input id="landing-league" type="text" placeholder="Sleeper League ID" required />
 			<button class="btn btn-primary" type="submit">Continue</button>
 		</form>
-		<p class="meta">Sleeper: League → Settings → League ID. Yahoo: you'll be prompted to authorize.</p>
+		<p class="meta">You can find your League ID in Sleeper → League → Settings → League ID.</p>
 	</main>
 	<script>
-		const prov = document.getElementById('provider');
-		const league = document.getElementById('landing-league');
-		const connect = document.getElementById('yahoo-connect');
-		prov.addEventListener('change', ()=>{
-			const isYahoo = prov.value === 'yahoo';
-			league.disabled = isYahoo;
-			connect.style.display = isYahoo ? 'inline-block' : 'none';
-		});
-		prov.dispatchEvent(new Event('change'));
 		document.getElementById('landing-form').addEventListener('submit', (e)=>{
 			e.preventDefault();
-			localStorage.setItem('provider', prov.value);
-			if (prov.value === 'sleeper') {
-				const v = league.value.trim();
-				if (v) localStorage.setItem('league_id', v);
-			}
+			const v = document.getElementById('landing-league').value.trim();
+			if (!v) return;
+			localStorage.setItem('league_id', v);
 			window.location.href = '/app';
 		});
 	</script>

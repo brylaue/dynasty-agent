@@ -4,11 +4,11 @@
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title>Dynasty Agent • App</title>
-	<link rel="stylesheet" href="/static/style.css" />
+	<link rel="stylesheet" href="/static/style.css?v=20250819" />
 	<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 	<script>
 		window.SUPABASE_URL=''; window.SUPABASE_ANON='';
-		fetch('/api/public/config').then(r=>r.json()).then(cfg=>{ window.SUPABASE_URL=cfg.supabase_url||''; window.SUPABASE_ANON=cfg.supabase_anon||''; }).catch(()=>{});
+		fetch('/api/public/config?v=20250819').then(r=>r.json()).then(cfg=>{ window.SUPABASE_URL=cfg.supabase_url||''; window.SUPABASE_ANON=cfg.supabase_anon||''; }).catch(()=>{});
 	</script>
 </head>
 <body>
@@ -115,6 +115,6 @@
 			return {};
 		};
 	</script>
-	<script src="/static/app.js"></script>
+	<script src="/static/app.js?v=20250819"></script>
 </body>
 </html>
