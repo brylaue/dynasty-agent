@@ -1,0 +1,23 @@
+[build]
+  publish = "web"
+  command = ""
+
+# Proxy API calls to your backend FastAPI server
+# TODO: Replace YOUR-BACKEND-HOST with your deployed backend base (e.g., https://your-backend.fly.dev)
+[[redirects]]
+  from = "/api/*"
+  to = "https://YOUR-BACKEND-HOST/api/:splat"
+  status = 200
+  force = true
+
+# SPA-style fallback to index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Optional: security headers for static assets
+[[headers]]
+  for = "/static/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
