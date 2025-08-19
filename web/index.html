@@ -5,28 +5,73 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Dynasty Agent</title>
   <link rel="stylesheet" href="/static/style.css" />
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">Dynasty Agent</div>
+    <div class="spacer"></div>
+    <div id="auth-area"></div>
   </header>
   <main class="page" style="max-width:720px;">
-    <h1>Fantasy research, tailored to your Sleeper league</h1>
-    <p class="meta">Enter your Sleeper League ID to spin up a personalized research workspace with rosters, projections, trending news, and an AI chat tuned to your league.</p>
-    <form id="landing-form" class="composer" style="gap:8px;">
-      <input id="landing-league" type="text" placeholder="Sleeper League ID" required />
-      <button class="btn btn-primary" type="submit">Continue</button>
-    </form>
+    <h1>Fantasy research, tailored to your Sleeper or Yahoo league</h1>
+    <p class="meta">Sign in to personalize your news feed and save your team preferences.</p>
+    <div class="toolbar">
+      <button id="google-signin" class="btn btn-primary">Sign in with Google</button>
+      <button id="signout" class="btn btn-secondary" style="display:none;">Sign out</button>
+    </div>
+    <div class="composer" style="gap:8px;">
+      <select id="provider">
+        <option value="sleeper">Sleeper</option>
+        <option value="yahoo">Yahoo</option>
+      </select>
+      <input id="landing-league" type="text" placeholder="Sleeper League ID" />
+      <button id="continue" class="btn btn-primary">Continue</button>
+    </div>
     <p class="meta">Find League ID in Sleeper → League → Settings → League ID.</p>
   </main>
   <script>
-    document.getElementById('landing-form').addEventListener('submit', (e)=>{
-      e.preventDefault();
-      const v = document.getElementById('landing-league').value.trim();
-      if (!v) return;
-      localStorage.setItem('league_id', v);
+    const supabaseUrl = window.SUPABASE_URL || '';
+    const supabaseAnon = window.SUPABASE_ANON || '';
+    const sb = (supabaseUrl && supabaseAnon) ? window.supabase.createClient(supabaseUrl, supabaseAnon) : null;
+
+    async function updateAuthUI() {
+      const signinBtn = document.getElementById('google-signin');
+      const signoutBtn = document.getElementById('signout');
+      if (!sb) { signinBtn.style.display='none'; signoutBtn.style.display='none'; return; }
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) {
+        signinBtn.style.display = 'none';
+        signoutBtn.style.display = 'inline-block';
+      } else {
+        signinBtn.style.display = 'inline-block';
+        signoutBtn.style.display = 'none';
+      }
+    }
+
+    document.getElementById('google-signin').addEventListener('click', async ()=>{
+      if (!sb) return alert('Auth disabled');
+      const { data, error } = await sb.auth.signInWithOAuth({ provider: 'google' });
+      if (error) alert(error.message);
+    });
+    document.getElementById('signout').addEventListener('click', async ()=>{
+      if (!sb) return; await sb.auth.signOut(); updateAuthUI();
+    });
+
+    document.getElementById('continue').addEventListener('click', async ()=>{
+      const prov = document.getElementById('provider').value;
+      const league = document.getElementById('landing-league').value.trim();
+      localStorage.setItem('provider', prov);
+      if (league) localStorage.setItem('league_id', league);
+      // pass session token to app if present
+      if (sb) {
+        const { data: { session } } = await sb.auth.getSession();
+        if (session) localStorage.setItem('sb_token', session.access_token);
+      }
       window.location.href = '/app.html';
     });
+
+    updateAuthUI();
   </script>
 </body>
 </html>

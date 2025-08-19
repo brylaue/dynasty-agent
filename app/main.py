@@ -15,6 +15,7 @@ from app.services.memory import MemoryStore, UserPreferences
 from app.services.providers import ProviderRouter, LeagueProvider
 from app.services.yahoo_client import YahooClient
 from app.services.news_aggregator import fetch_rss_news, filter_news_by_names
+from app.services.auth import verify_jwt_and_get_user_id
 
 load_dotenv()
 
@@ -119,6 +120,12 @@ async def api_projections(week: int | None = None, league_id: str | None = None,
 
 @app.get("/api/news")
 async def api_news(lookback_hours: int = 48, limit: int = 25, provider: str | None = LeagueProvider.SLEEPER, user_id: str = "default", league_id: str | None = None):
+    # Try to use authenticated user
+    try:
+        user_from_token = verify_jwt_and_get_user_id()
+        user_id = user_from_token
+    except Exception:
+        user_id = user_id or "default"
     try:
         prefs = memory_store.get_preferences(user_id=user_id)
         if not prefs.roster_owner_name:
@@ -240,8 +247,19 @@ async def ask_agent_stream(question: str, user_id: str = "default", league_id: s
     return StreamingResponse(event_gen(), media_type="text/event-stream")
 
 
+@app.get("/api/me")
+async def api_me(user_id: str = VerifyAuth := verify_jwt_and_get_user_id):
+    return {"user_id": user_id}
+
+
 @app.get("/api/prefs")
-async def get_prefs(user_id: str = "default"):
+async def get_prefs(user_id: str = None):
+    # Allow token to override user_id if present
+    try:
+        user_from_token = verify_jwt_and_get_user_id()
+        user_id = user_from_token
+    except Exception:
+        user_id = user_id or "default"
     return memory_store.get_preferences(user_id=user_id).model_dump(exclude_none=True)
 
 
@@ -253,13 +271,18 @@ class PrefsBody(BaseModel):
 
 
 @app.post("/api/prefs")
-async def set_prefs(body: PrefsBody):
+async def set_prefs(body: PrefsBody, user_id: str = None):
+    try:
+        user_from_token = verify_jwt_and_get_user_id()
+        user_id = user_from_token
+    except Exception:
+        user_id = body.user_id or "default"
     prefs = UserPreferences(
         favorite_team=body.favorite_team,
         roster_owner_name=body.roster_owner_name,
         risk_tolerance=body.risk_tolerance,
     )
-    memory_store.set_preferences(prefs, user_id=body.user_id or "default")
+    memory_store.set_preferences(prefs, user_id=user_id)
     return {"ok": True}
 
 

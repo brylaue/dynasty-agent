@@ -54,8 +54,14 @@ function addMessage(role, text, sources) {
   return div;
 }
 
+async function authorizedFetch(url, options={}) {
+  const headers = (await (window.getAuthHeaders ? window.getAuthHeaders() : {})) || {};
+  const merged = { ...(options||{}), headers: { ...(options.headers||{}), ...headers } };
+  return fetch(url, merged);
+}
+
 async function askJson(q) {
-  const res = await fetch(apiUrl('/api/ask'), {
+  const res = await authorizedFetch(apiUrl('/api/ask'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question: q, league_id: LEAGUE_ID || undefined })
@@ -197,7 +203,7 @@ async function loadRosters() {
   rosterList.innerHTML = 'Loading rosters…';
   const params = {};
   if (LEAGUE_ID) params.league_id = LEAGUE_ID;
-  const res = await fetch(apiUrl('/api/rosters', params));
+  const res = await authorizedFetch(apiUrl('/api/rosters', params));
   if (!res.ok) {
     const data = await res.json().catch(()=>({}));
     rosterList.textContent = `Error loading rosters: ${data?.error || res.statusText}`;
@@ -226,7 +232,7 @@ async function saveMyTeam() {
   localStorage.setItem('my_team', owner_name);
   try {
     const url = apiUrl('/api/my-team', { owner_name, user_id: 'default' });
-    const res = await fetch(url, { method: 'GET' });
+    const res = await authorizedFetch(url, { method: 'GET' });
     if (!res.ok) throw new Error('Failed to save');
     addMessage('bot', `Saved your team as: ${owner_name}`);
   } catch (e) {
@@ -259,7 +265,7 @@ projBtn?.addEventListener('click', async ()=>{
   projList.innerHTML = 'Loading projections…';
   const params = {};
   if (LEAGUE_ID) params.league_id = LEAGUE_ID;
-  const res = await fetch(apiUrl('/api/projections', params));
+  const res = await authorizedFetch(apiUrl('/api/projections', params));
   const data = await res.json();
   if (!res.ok) { projList.textContent = data?.error || 'Error.'; return; }
   const items = data.projections || [];
@@ -277,7 +283,7 @@ const newsBtn = document.getElementById('load-news');
 const newsList = document.getElementById('news-list');
 newsBtn?.addEventListener('click', async ()=>{
   newsList.innerHTML = 'Loading news…';
-  const res = await fetch(apiUrl('/api/news', { user_id: 'default', lookback_hours: 48, limit: 25, league_id: LEAGUE_ID || '' }));
+  const res = await authorizedFetch(apiUrl('/api/news', { user_id: 'default', lookback_hours: 48, limit: 25, league_id: LEAGUE_ID || '' }));
   const data = await res.json();
   if (!res.ok) { newsList.textContent = data?.error || 'Error.'; return; }
   const items = data.rss || [];
@@ -320,7 +326,7 @@ function renderTradeList(listEl, arr) {
 async function searchPlayers(q, suggestEl, onPick) {
   suggestEl.innerHTML = '';
   if (!q || q.length < 2) return;
-  const res = await fetch(apiUrl('/api/players/search', { q }));
+  const res = await authorizedFetch(apiUrl('/api/players/search', { q }));
   const data = await res.json();
   (data||[]).forEach(p => {
     const item = document.createElement('div');
@@ -336,7 +342,7 @@ tradeBInput?.addEventListener('input', ()=> searchPlayers(tradeBInput.value, tra
 
 tradeEvalBtn?.addEventListener('click', async ()=>{
   tradeResult.innerHTML = 'Evaluating…';
-  const res = await fetch(apiUrl('/api/trade/evaluate'), {
+  const res = await authorizedFetch(apiUrl('/api/trade/evaluate'), {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ teamA: teamA.map(p=>p.player_id), teamB: teamB.map(p=>p.player_id), league_id: LEAGUE_ID || undefined, provider: PROVIDER })
   });

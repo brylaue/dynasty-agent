@@ -5,6 +5,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title>Dynasty Agent • App</title>
 	<link rel="stylesheet" href="/static/style.css" />
+	<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 </head>
 <body>
 	<header class="topbar">
@@ -99,6 +100,17 @@
 		<small>Powered by Sleeper + LangGraph • <span id="status-text"></span></small>
 	</footer>
 
+	<script>
+		const sbUrl = window.SUPABASE_URL || '';
+		const sbAnon = window.SUPABASE_ANON || '';
+		const sb = (sbUrl && sbAnon) ? window.supabase.createClient(sbUrl, sbAnon) : null;
+		window.getAuthHeaders = async () => {
+			if (!sb) return {};
+			const { data: { session } } = await sb.auth.getSession();
+			if (session?.access_token) return { 'Authorization': `Bearer ${session.access_token}` };
+			return {};
+		};
+	</script>
 	<script src="/static/app.js"></script>
 </body>
 </html>
