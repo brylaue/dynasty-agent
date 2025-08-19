@@ -5,7 +5,7 @@ const messages = document.getElementById('messages');
 function addMessage(role, text, sources) {
   const div = document.createElement('div');
   div.className = `msg ${role}`;
-  div.textContent = text;
+  div.textContent = text || '';
   if (sources && sources.length) {
     const src = document.createElement('div');
     src.style.marginTop = '6px';
@@ -33,11 +33,21 @@ function askStream(q) {
     const es = new EventSource(`/api/ask/stream?question=${encodeURIComponent(q)}`);
     const container = addMessage('bot', '');
     es.onmessage = (e) => {
-      container.textContent += e.data;
+      try {
+        const obj = JSON.parse(e.data);
+        if (obj.status === 'planning') {
+          container.textContent = 'Planning…';
+        } else if (obj.token) {
+          if (container.textContent === 'Planning…') container.textContent = '';
+          container.textContent += obj.token;
+        }
+      } catch {
+        container.textContent += e.data;
+      }
     };
     es.addEventListener('sources', (e) => {
       try {
-        const sources = JSON.parse(e.data.replace(/^data: /, ''));
+        const sources = JSON.parse(e.data);
         addMessage('bot', '', sources);
       } catch {}
     });

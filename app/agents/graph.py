@@ -23,7 +23,7 @@ class AgentState(BaseModel):
 
 SYSTEM_PROMPT = (
     "You are a Fantasy Football research agent for a Sleeper league. "
-    "Classify questions into one of: 'league_info', 'rosters', 'matchups', 'players_search', 'trending', 'nfl_state', 'start_sit', 'trade'."
+    "Classify questions into one of: 'league_info', 'rosters', 'matchups', 'players_search', 'trending', 'nfl_state', 'start_sit', 'trade', 'waivers'."
 )
 
 SYNTH_PROMPT = (
@@ -60,6 +60,8 @@ async def classify_intent(state: AgentState) -> AgentState:
         "start": "start_sit",
         "start_sit": "start_sit",
         "trade": "trade",
+        "waiver": "waivers",
+        "waivers": "waivers",
     }
     for key, val in mapping.items():
         if key in intent:
@@ -89,7 +91,8 @@ async def fetch_context(state: AgentState) -> AgentState:
         state_info = await sleeper_tools.get_nfl_state.ainvoke({})
         week = int(state_info.get("week") or 1)
         matchups = await sleeper_tools.get_matchups.ainvoke({"week": week})
-        data.update({"nfl_state": state_info, "matchups": matchups})
+        previews = await analysis.build_matchup_previews(matchups)
+        data.update({"nfl_state": state_info, "matchups": matchups, "matchup_previews": previews})
         sources.extend([
             {"tool": "get_nfl_state", "args": {}},
             {"tool": "get_matchups", "args": {"week": week}},
@@ -110,6 +113,12 @@ async def fetch_context(state: AgentState) -> AgentState:
         state_info = await sleeper_tools.get_nfl_state.ainvoke({})
         data["nfl_state"] = state_info
         sources.append({"tool": "get_nfl_state", "args": {}})
+
+    elif intent == "waivers":
+        trending = await sleeper_tools.get_trending_players.ainvoke({"trend_type": "add", "lookback_hours": 72, "limit": 50})
+        waivers = await analysis.recommend_waivers(trending, limit=12)
+        data["waiver_recommendations"] = waivers
+        sources.append({"tool": "get_trending_players", "args": {"trend_type": "add", "lookback_hours": 72, "limit": 50}})
 
     elif intent in {"start_sit", "trade"}:
         rosters, nfl_state = await sleeper_tools.get_rosters.ainvoke({}), await sleeper_tools.get_nfl_state.ainvoke({})

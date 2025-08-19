@@ -1,4 +1,5 @@
 import os
+import json
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,16 +62,16 @@ async def ask_agent_stream(question: str, user_id: str = "default"):
     prefs = memory_store.get_preferences(user_id=user_id).model_dump(exclude_none=True)
 
     async def event_gen():
-        yield f"data: planning...\n\n"
+        yield f"data: {json.dumps({"status": "planning"})}\n\n"
         result = await research_graph.ainvoke({"question": question, "preferences": prefs})
         answer = result.get("answer", "")
         sources = result.get("sources", [])
         chunk_size = 200
         for i in range(0, len(answer), chunk_size):
-            yield f"data: {answer[i:i+chunk_size]}\n\n"
-        yield f"data: \n\n"
+            chunk = {"token": answer[i:i+chunk_size]}
+            yield f"data: {json.dumps(chunk)}\n\n"
         yield f"event: sources\n"
-        yield f"data: {sources}\n\n"
+        yield f"data: {json.dumps(sources)}\n\n"
         yield "event: end\n\n"
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
