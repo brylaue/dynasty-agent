@@ -101,7 +101,18 @@ class SleeperClient:
 	async def get_trending_players(self, sport: str = "nfl", trend_type: str = "add", lookback_hours: int = 24, limit: int = 25, *, force_refresh: bool = False) -> List[Dict[str, Any]]:
 		params = {"lookback_hours": lookback_hours, "limit": limit}
 		key = f"trending:{sport}:{trend_type}:{lookback_hours}:{limit}"
-		return await self._cached(key, 300.0, lambda: self._get(f"/players/trending/{sport}/{trend_type}", params=params), force_refresh=force_refresh)
+		async def fetch() -> Any:
+			try:
+				return await self._get(f"/players/trending/{sport}/{trend_type}", params=params)
+			except httpx.HTTPStatusError as e:
+				if e.response is not None and e.response.status_code == 404:
+					# Fallback to alternate path some docs reference
+					try:
+						return await self._get(f"/trending/{sport}/{trend_type}", params=params)
+					except Exception:
+						return []
+				raise
+		return await self._cached(key, 300.0, fetch, force_refresh=force_refresh)
 
 	async def get_player_lookup(self) -> Dict[str, Any]:
 		return await self.get_players()
