@@ -3,10 +3,9 @@
   command = ""
 
 # Proxy API calls to your backend FastAPI server
-# TODO: Replace YOUR-BACKEND-HOST with your deployed backend base (e.g., https://your-backend.fly.dev)
 [[redirects]]
   from = "/api/*"
-  to = "https://YOUR-BACKEND-HOST/api/:splat"
+  to = "https://dynasty-agent-backend.fly.dev/api/:splat"
   status = 200
   force = true
 
