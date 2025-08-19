@@ -49,19 +49,28 @@ class QueryBody(BaseModel):
 
 @app.get("/api/yahoo/auth")
 async def yahoo_auth_start():
-    yc = YahooClient()
-    token = await yc.get_request_token()
-    url = yc.get_authorize_url(token)
-    return RedirectResponse(url)
+    try:
+        if not os.getenv("YAHOO_CLIENT_ID") or not os.getenv("YAHOO_CLIENT_SECRET"):
+            return JSONResponse(status_code=400, content={"error": "Yahoo client credentials not configured (YAHOO_CLIENT_ID/SECRET)."})
+        yc = YahooClient()
+        token = await yc.get_request_token()
+        url = yc.get_authorize_url(token)
+        return RedirectResponse(url)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Yahoo auth init failed: {str(e)}"})
 
 
 @app.get("/api/yahoo/callback")
-async def yahoo_auth_callback(oauth_verifier: str = Query(...)):
-    yc = YahooClient()
-    token = await yc.fetch_access_token(oauth_verifier)
-    # TODO: persist token (session/db) and set provider_router.yahoo
-    provider_router.yahoo = YahooClient(token=token)
-    return RedirectResponse("/app")
+async def yahoo_auth_callback(oauth_verifier: str = Query(default=None)):
+    try:
+        if not oauth_verifier:
+            return JSONResponse(status_code=400, content={"error": "Missing oauth_verifier in callback."})
+        yc = YahooClient()
+        token = await yc.fetch_access_token(oauth_verifier)
+        provider_router.yahoo = YahooClient(token=token)
+        return RedirectResponse("/app")
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Yahoo auth callback failed: {str(e)}"})
 
 
 @app.get("/api/health")
