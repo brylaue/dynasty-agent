@@ -1,3 +1,12 @@
+let API_BASE = '';
+const backendInput = document.getElementById('backend-base');
+const saveBackendBtn = document.getElementById('save-backend');
+
+function apiUrl(path) {
+  if (!API_BASE) return path; // use proxy
+  return API_BASE.replace(/\/$/, '') + path;
+}
+
 const form = document.getElementById('ask-form');
 const input = document.getElementById('question');
 const messages = document.getElementById('messages');
@@ -25,7 +34,7 @@ function addMessage(role, text, sources) {
 }
 
 async function askJson(q) {
-  const res = await fetch('/api/ask', {
+  const res = await fetch(apiUrl('/api/ask'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question: q })
@@ -37,7 +46,7 @@ async function askJson(q) {
 
 function askStream(q) {
   return new Promise((resolve, reject) => {
-    const es = new EventSource(`/api/ask/stream?question=${encodeURIComponent(q)}`);
+    const es = new EventSource(apiUrl(`/api/ask/stream?question=${encodeURIComponent(q)}`));
     const container = addMessage('bot', '');
     es.onmessage = (e) => {
       try {
@@ -77,7 +86,7 @@ function askStream(q) {
 
 async function loadRosters() {
   rosterList.innerHTML = 'Loading rosters…';
-  const res = await fetch('/api/rosters');
+  const res = await fetch(apiUrl('/api/rosters'));
   const data = await res.json();
   if (!Array.isArray(data)) {
     rosterList.textContent = 'Error loading rosters';
@@ -94,7 +103,6 @@ async function loadRosters() {
   const found = Array.from(ownerSelect.options).find(o => o.value.toLowerCase().includes(defaultName.toLowerCase()));
   if (found) ownerSelect.value = found.value;
 
-  // Render simple roster cards
   rosterList.innerHTML = '';
   data.forEach((r) => {
     const card = document.createElement('div');
@@ -117,7 +125,7 @@ async function loadRosters() {
 async function saveMyTeam() {
   const owner_name = ownerSelect.value;
   try {
-    await fetch('/api/my-team', {
+    await fetch(apiUrl('/api/my-team'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ owner_name })
@@ -128,16 +136,22 @@ async function saveMyTeam() {
   }
 }
 
+saveBackendBtn?.addEventListener('click', () => {
+  API_BASE = (backendInput?.value || '').trim();
+  addMessage('bot', API_BASE ? `Using backend: ${API_BASE}` : 'Using Netlify proxy');
+});
+
 loadBtn?.addEventListener('click', loadRosters);
 saveTeamBtn?.addEventListener('click', saveMyTeam);
 
-form.addEventListener('submit', async (e) => {
+const formEl = document.getElementById('ask-form');
+formEl.addEventListener('submit', async (e) => {
   e.preventDefault();
   const q = input.value.trim();
   if (!q) return;
   addMessage('user', q);
   input.value = '';
-  const btn = form.querySelector('button');
+  const btn = formEl.querySelector('button');
   btn.disabled = true;
   try {
     const useStream = true;
