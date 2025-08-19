@@ -12,6 +12,7 @@ class UserPreferences(BaseModel):
     favorite_team: str | None = None
     roster_owner_name: str | None = None
     risk_tolerance: str | None = None  # low, medium, high
+    roster_id: int | None = None
 
 
 class MemoryStore:

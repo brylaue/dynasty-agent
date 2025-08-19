@@ -183,6 +183,9 @@ function rosterCard(r) {
   return card;
 }
 
+// Persist my team locally for frontend behavior
+let MY_TEAM = localStorage.getItem('my_team') || '';
+
 async function loadRosters() {
   if (!rosterList) return;
   rosterList.innerHTML = 'Loading rosters…';
@@ -206,12 +209,15 @@ async function loadRosters() {
     opt.textContent = `${r.owner} (W-L-T: ${r.wins || 0}-${r.losses || 0}-${r.ties || 0})`;
     ownerSelect.appendChild(opt);
   });
+  if (MY_TEAM) ownerSelect.value = MY_TEAM;
   rosterList.innerHTML = '';
   data.forEach((r) => rosterList.appendChild(rosterCard(r)));
 }
 
 async function saveMyTeam() {
   const owner_name = ownerSelect.value;
+  MY_TEAM = owner_name;
+  localStorage.setItem('my_team', owner_name);
   try {
     await fetch(apiUrl('/api/my-team'), {
       method: 'POST',
@@ -222,6 +228,11 @@ async function saveMyTeam() {
   } catch (e) {
     addMessage('bot', 'Error saving team');
   }
+}
+
+// Gentle hint if team is not set when chatting
+if (!MY_TEAM) {
+  addMessage('bot', 'Tip: set your team in the Rosters drawer to personalize advice.');
 }
 
 saveBackendBtn?.addEventListener('click', () => {

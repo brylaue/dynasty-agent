@@ -151,14 +151,19 @@ async def api_news(lookback_hours: int = 48, limit: int = 25, provider: str | No
 
 
 class SetTeamBody(BaseModel):
-    owner_name: str
+    owner_name: str | None = None
+    roster_id: int | None = None
     user_id: str | None = "default"
 
 
 @app.post("/api/my-team")
 async def set_my_team(body: SetTeamBody):
     prefs = memory_store.get_preferences(user_id=body.user_id or "default")
-    prefs.roster_owner_name = body.owner_name
+    if body.owner_name:
+        prefs.roster_owner_name = body.owner_name
+    if body.roster_id is not None:
+        # store roster_id as an ad-hoc field on prefs
+        setattr(prefs, "roster_id", body.roster_id)
     memory_store.set_preferences(prefs, user_id=body.user_id or "default")
     return {"ok": True}
 
