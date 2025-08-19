@@ -1,27 +1,33 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.tools import sleeper_tools
+from app.services import analysis
 
 
 class AgentState(BaseModel):
     question: str
-    answer: str | None = None
+    intent: Optional[str] = None
+    data: Dict[str, Any] = {}
+    answer: Optional[str] = None
     sources: List[Dict[str, Any]] = []
 
 
 SYSTEM_PROMPT = (
-    "You are a Fantasy Football research agent specialized for a specific Sleeper league. "
-    "Use the provided tools to fetch league, roster, matchup, and player data. "
-    "Return a concise, actionable answer for a fantasy manager. "
-    "When you use concrete data, include a brief 'Sources' section summarizing ids/names/weeks."
+    "You are a Fantasy Football research agent for a Sleeper league. "
+    "Classify questions into one of: 'league_info', 'rosters', 'matchups', 'players_search', 'trending', 'nfl_state', 'start_sit', 'trade'."
+)
+
+SYNTH_PROMPT = (
+    "You are a Fantasy Football research agent. Use the provided context to answer the user's question with concise, actionable advice. "
+    "If appropriate, add a short bullet list of recommendations."
 )
 
 
@@ -30,68 +36,137 @@ def _llm() -> ChatOpenAI:
     return ChatOpenAI(model=model, temperature=0.2)
 
 
-async def plan_and_answer(state: AgentState) -> AgentState:
-    llm = _llm().bind_tools(
-        [
-            sleeper_tools.get_league_info,
-            sleeper_tools.get_rosters,
-            sleeper_tools.get_matchups,
-            sleeper_tools.search_players,
-            sleeper_tools.get_nfl_state,
-            sleeper_tools.get_trending_players,
-        ]
-    )
-
-    messages: List[Any] = [
+async def classify_intent(state: AgentState) -> AgentState:
+    llm = _llm()
+    messages = [
         SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(content=state.question),
+        HumanMessage(content=f"Question: {state.question}\nRespond with only the intent label."),
     ]
+    result = await llm.ainvoke(messages)
+    intent = (result.content or "").strip().lower()
+    # Normalize
+    mapping = {
+        "league": "league_info",
+        "league_info": "league_info",
+        "roster": "rosters",
+        "rosters": "rosters",
+        "matchup": "matchups",
+        "matchups": "matchups",
+        "player": "players_search",
+        "players_search": "players_search",
+        "trending": "trending",
+        "state": "nfl_state",
+        "nfl_state": "nfl_state",
+        "start": "start_sit",
+        "start_sit": "start_sit",
+        "trade": "trade",
+    }
+    for key, val in mapping.items():
+        if key in intent:
+            intent = val
+            break
+    if intent not in mapping.values():
+        intent = "rosters"
+    return AgentState(question=state.question, intent=intent, data={}, sources=[])
 
-    collected_sources: List[Dict[str, Any]] = []
 
-    # Up to 4 tool-use iterations
-    for _ in range(4):
-        ai: AIMessage = await llm.ainvoke(messages)
-        messages.append(ai)
-        tool_calls = getattr(ai, "tool_calls", None) or ai.additional_kwargs.get("tool_calls", [])
-        if not tool_calls:
-            answer_text = ai.content or ""
-            return AgentState(question=state.question, answer=answer_text, sources=collected_sources)
+async def fetch_context(state: AgentState) -> AgentState:
+    intent = state.intent or "rosters"
+    sources: List[Dict[str, Any]] = []
+    data: Dict[str, Any] = {}
 
-        for call in tool_calls:
-            name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
-            args = call.get("args", {}) if isinstance(call, dict) else getattr(call, "args", {})
-            call_id = call.get("id") if isinstance(call, dict) else getattr(call, "id", None)
+    if intent == "league_info":
+        league = await sleeper_tools.get_league_info.ainvoke({})
+        data["league"] = league
+        sources.append({"tool": "get_league_info", "args": {}})
 
-            tool_map = {
-                "get_league_info": sleeper_tools.get_league_info,
-                "get_rosters": sleeper_tools.get_rosters,
-                "get_matchups": sleeper_tools.get_matchups,
-                "search_players": sleeper_tools.search_players,
-                "get_nfl_state": sleeper_tools.get_nfl_state,
-                "get_trending_players": sleeper_tools.get_trending_players,
-            }
-            tool = tool_map.get(name)
-            if tool is None:
-                messages.append(ToolMessage(content=f"Unknown tool: {name}", tool_call_id=call_id or name or ""))
-                continue
-            try:
-                result = await tool.ainvoke(args or {})
-                # Add compact source line
-                collected_sources.append({"tool": name, "args": args})
-                messages.append(ToolMessage(content=str(result)[:6000], tool_call_id=call_id or name or ""))
-            except Exception as exc:  # pragma: no cover
-                messages.append(ToolMessage(content=f"Tool error: {exc}", tool_call_id=call_id or name or ""))
+    elif intent == "rosters":
+        rosters = await sleeper_tools.get_rosters.ainvoke({})
+        data["rosters"] = rosters
+        sources.append({"tool": "get_rosters", "args": {}})
 
-    final_ai: AIMessage = await llm.ainvoke(messages)
-    return AgentState(question=state.question, answer=final_ai.content or "", sources=collected_sources)
+    elif intent == "matchups":
+        state_info = await sleeper_tools.get_nfl_state.ainvoke({})
+        week = int(state_info.get("week") or 1)
+        matchups = await sleeper_tools.get_matchups.ainvoke({"week": week})
+        data.update({"nfl_state": state_info, "matchups": matchups})
+        sources.extend([
+            {"tool": "get_nfl_state", "args": {}},
+            {"tool": "get_matchups", "args": {"week": week}},
+        ])
+
+    elif intent == "players_search":
+        # Heuristic: extract name fragment from the question
+        frag = state.question
+        players = await sleeper_tools.search_players.ainvoke({"query": frag, "limit": 10})
+        data["players"] = players
+        sources.append({"tool": "search_players", "args": {"query": frag, "limit": 10}})
+
+    elif intent == "trending":
+        trending = await sleeper_tools.get_trending_players.ainvoke({"trend_type": "add", "lookback_hours": 48, "limit": 25})
+        data["trending"] = trending
+        sources.append({"tool": "get_trending_players", "args": {"trend_type": "add", "lookback_hours": 48, "limit": 25}})
+
+    elif intent == "nfl_state":
+        state_info = await sleeper_tools.get_nfl_state.ainvoke({})
+        data["nfl_state"] = state_info
+        sources.append({"tool": "get_nfl_state", "args": {}})
+
+    elif intent in {"start_sit", "trade"}:
+        rosters, nfl_state = await sleeper_tools.get_rosters.ainvoke({}), await sleeper_tools.get_nfl_state.ainvoke({})
+        data["rosters"] = rosters
+        data["nfl_state"] = nfl_state
+        sources.extend([
+            {"tool": "get_rosters", "args": {}},
+            {"tool": "get_nfl_state", "args": {}},
+        ])
+        # Augment with simple analysis
+        if intent == "start_sit":
+            data["start_sit"] = await analysis.suggest_start_sit(rosters)
+        else:
+            trending = await sleeper_tools.get_trending_players.ainvoke({"trend_type": "add", "lookback_hours": 48, "limit": 50})
+            data["trade_suggestions"] = await analysis.suggest_trade_targets(rosters, trending)
+            sources.append({"tool": "get_trending_players", "args": {"trend_type": "add", "lookback_hours": 48, "limit": 50}})
+
+    return AgentState(question=state.question, intent=intent, data=data, sources=sources)
+
+
+async def synthesize(state: AgentState) -> AgentState:
+    llm = _llm()
+    context_lines = [f"Intent: {state.intent}"]
+    for k, v in state.data.items():
+        # Keep context compact
+        snippet = str(v)
+        if len(snippet) > 4000:
+            snippet = snippet[:4000] + "..."
+        context_lines.append(f"{k}: {snippet}")
+    context = "\n\n".join(context_lines)
+
+    messages = [
+        SystemMessage(content=SYNTH_PROMPT),
+        HumanMessage(content=f"Context:\n{context}\n\nQuestion: {state.question}"),
+    ]
+    result = await llm.ainvoke(messages)
+    return AgentState(
+        question=state.question,
+        intent=state.intent,
+        data=state.data,
+        answer=result.content or "",
+        sources=state.sources,
+    )
 
 
 def create_research_graph(sleeper_client) -> Any:
     sleeper_tools.set_sleeper_client(sleeper_client)
 
     graph = StateGraph(AgentState)
-    graph.add_node("answer", plan_and_answer)
-    graph.set_entry_point("answer")
-    graph.add_edge("answer", END)
+    graph.add_node("classify", classify_intent)
+    graph.add_node("fetch", fetch_context)
+    graph.add_node("synthesize", synthesize)
+
+    graph.set_entry_point("classify")
+    graph.add_edge("classify", "fetch")
+    graph.add_edge("fetch", "synthesize")
+    graph.add_edge("synthesize", END)
+
     return graph.compile()
