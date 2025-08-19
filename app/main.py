@@ -56,16 +56,13 @@ async def api_health():
 
 
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return templates.TemplateResponse(
-        "index.html",
-        {"request": request, "league_id": LEAGUE_ID},
-    )
+async def landing(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
-@app.get("/start", response_class=HTMLResponse)
-async def start(request: Request):
-    return templates.TemplateResponse("landing.html", {"request": request})
+@app.get("/app", response_class=HTMLResponse)
+async def app_page(request: Request):
+    return templates.TemplateResponse("app.html", {"request": request})
 
 
 @app.get("/api/rosters")
