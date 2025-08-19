@@ -2,10 +2,18 @@ const form = document.getElementById('ask-form');
 const input = document.getElementById('question');
 const messages = document.getElementById('messages');
 
-function addMessage(role, text) {
+function addMessage(role, text, sources) {
   const div = document.createElement('div');
   div.className = `msg ${role}`;
   div.textContent = text;
+  if (sources && sources.length) {
+    const src = document.createElement('div');
+    src.style.marginTop = '6px';
+    src.style.fontSize = '12px';
+    src.style.color = '#666';
+    src.textContent = 'Sources: ' + sources.map(s => `${s.tool}${s.args ? '(' + JSON.stringify(s.args) + ')' : ''}`).join(', ');
+    div.appendChild(src);
+  }
   messages.appendChild(div);
   messages.parentElement.scrollTop = messages.parentElement.scrollHeight;
 }
@@ -24,7 +32,7 @@ form.addEventListener('submit', async (e) => {
       body: JSON.stringify({ question: q })
     });
     const data = await res.json();
-    addMessage('bot', data.answer || 'No answer.');
+    addMessage('bot', data.answer || 'No answer.', data.sources);
   } catch (err) {
     addMessage('bot', 'Error: ' + (err?.message || String(err)));
   } finally {

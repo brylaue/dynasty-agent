@@ -19,9 +19,9 @@ class SleeperClient:
     async def close(self) -> None:
         await self._client.aclose()
 
-    async def _get(self, path: str) -> Any:
+    async def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
         url = f"{self.base_url}{path}"
-        resp = await self._client.get(url)
+        resp = await self._client.get(url, params=params)
         resp.raise_for_status()
         return resp.json()
 
@@ -77,3 +77,7 @@ class SleeperClient:
                 }
             )
         return summaries
+
+    async def get_trending_players(self, sport: str = "nfl", trend_type: str = "add", lookback_hours: int = 24, limit: int = 25) -> List[Dict[str, Any]]:
+        params = {"lookback_hours": lookback_hours, "limit": limit}
+        return await self._get(f"/players/trending/{sport}/{trend_type}", params=params)

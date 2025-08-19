@@ -67,3 +67,17 @@ async def search_players(query: str, limit: int = 10) -> List[Dict[str, Any]]:
         if len(results) >= limit:
             break
     return results
+
+
+@tool("get_nfl_state", return_direct=False)
+async def get_nfl_state() -> Dict[str, Any]:
+    """Fetch current NFL season/week state from Sleeper."""
+    assert _sleeper_client is not None, "Sleeper client not set"
+    return await _sleeper_client.get_nfl_state()
+
+
+@tool("get_trending_players", return_direct=False)
+async def get_trending_players(trend_type: str = "add", lookback_hours: int = 24, limit: int = 25) -> List[Dict[str, Any]]:
+    """Fetch trending players on Sleeper for the last N hours, either 'add' or 'drop'."""
+    assert _sleeper_client is not None, "Sleeper client not set"
+    return await _sleeper_client.get_trending_players(trend_type=trend_type, lookback_hours=lookback_hours, limit=limit)

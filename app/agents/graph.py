@@ -37,6 +37,8 @@ async def plan_and_answer(state: AgentState) -> AgentState:
             sleeper_tools.get_rosters,
             sleeper_tools.get_matchups,
             sleeper_tools.search_players,
+            sleeper_tools.get_nfl_state,
+            sleeper_tools.get_trending_players,
         ]
     )
 
@@ -45,16 +47,17 @@ async def plan_and_answer(state: AgentState) -> AgentState:
         HumanMessage(content=state.question),
     ]
 
-    # Up to 3 tool-use iterations
-    for _ in range(3):
+    collected_sources: List[Dict[str, Any]] = []
+
+    # Up to 4 tool-use iterations
+    for _ in range(4):
         ai: AIMessage = await llm.ainvoke(messages)
         messages.append(ai)
         tool_calls = getattr(ai, "tool_calls", None) or ai.additional_kwargs.get("tool_calls", [])
         if not tool_calls:
             answer_text = ai.content or ""
-            return AgentState(question=state.question, answer=answer_text, sources=[])
+            return AgentState(question=state.question, answer=answer_text, sources=collected_sources)
 
-        # Execute tool calls
         for call in tool_calls:
             name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
             args = call.get("args", {}) if isinstance(call, dict) else getattr(call, "args", {})
@@ -65,27 +68,26 @@ async def plan_and_answer(state: AgentState) -> AgentState:
                 "get_rosters": sleeper_tools.get_rosters,
                 "get_matchups": sleeper_tools.get_matchups,
                 "search_players": sleeper_tools.search_players,
+                "get_nfl_state": sleeper_tools.get_nfl_state,
+                "get_trending_players": sleeper_tools.get_trending_players,
             }
             tool = tool_map.get(name)
             if tool is None:
                 messages.append(ToolMessage(content=f"Unknown tool: {name}", tool_call_id=call_id or name or ""))
                 continue
             try:
-                # Tools expect dict args; ensure default empty
                 result = await tool.ainvoke(args or {})
-                # Keep payloads concise
-                compact = result
-                messages.append(ToolMessage(content=str(compact)[:6000], tool_call_id=call_id or name or ""))
+                # Add compact source line
+                collected_sources.append({"tool": name, "args": args})
+                messages.append(ToolMessage(content=str(result)[:6000], tool_call_id=call_id or name or ""))
             except Exception as exc:  # pragma: no cover
                 messages.append(ToolMessage(content=f"Tool error: {exc}", tool_call_id=call_id or name or ""))
 
-    # Fallback finalization
     final_ai: AIMessage = await llm.ainvoke(messages)
-    return AgentState(question=state.question, answer=final_ai.content or "", sources=[])
+    return AgentState(question=state.question, answer=final_ai.content or "", sources=collected_sources)
 
 
 def create_research_graph(sleeper_client) -> Any:
-    # Provide the client to the tools module
     sleeper_tools.set_sleeper_client(sleeper_client)
 
     graph = StateGraph(AgentState)
