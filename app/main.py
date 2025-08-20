@@ -398,6 +398,48 @@ async def my_team_week(week: int | None = None, league_id: str | None = None, us
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
+@app.get("/api/league/projections")
+async def league_projections(league_id: str | None = None):
+    try:
+        # Determine season weeks (assume 1..17 for simplicity)
+        weeks = list(range(1, 18))
+        rosters = await sleeper_client.build_roster_summaries(league_id=league_id)
+        id_to_team = {r['roster_id']: r for r in rosters}
+        standings = {r['roster_id']: {"roster_id": r['roster_id'], "owner": r['owner'], "proj_wins": 0, "proj_losses": 0, "proj_ties": 0} for r in rosters}
+        for w in weeks:
+            matchups = await sleeper_client.get_matchups(week=w, league_id=league_id)
+            # Group by matchup_id
+            by_mid = {}
+            for m in matchups:
+                mid = m.get('matchup_id')
+                if mid is None: continue
+                by_mid.setdefault(mid, []).append(m)
+            for mid, games in by_mid.items():
+                if len(games) != 2:  # skip incomplete
+                    continue
+                a, b = games
+                # sum starters_points
+                sa = sum(sp or 0 for sp in (a.get('starters_points') or []))
+                sb = sum(sp or 0 for sp in (b.get('starters_points') or []))
+                ra = a.get('roster_id'); rb = b.get('roster_id')
+                if sa > sb:
+                    standings[ra]['proj_wins'] += 1
+                    standings[rb]['proj_losses'] += 1
+                elif sb > sa:
+                    standings[rb]['proj_wins'] += 1
+                    standings[ra]['proj_losses'] += 1
+                else:
+                    standings[ra]['proj_ties'] += 1
+                    standings[rb]['proj_ties'] += 1
+        # sort by wins then ties
+        table = list(standings.values())
+        table.sort(key=lambda x: (x['proj_wins'], -x['proj_losses']), reverse=True)
+        winner = table[0] if table else None
+        return {"weeks": weeks, "standings": table, "likely_winner": winner}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 @app.get("/api/public/config")
 async def public_config():
     return {

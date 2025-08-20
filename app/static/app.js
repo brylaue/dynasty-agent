@@ -60,15 +60,27 @@ async function authorizedFetch(url, options={}) {
   return fetch(url, merged);
 }
 
+// Typing indicator
+let typingDiv = null;
+function showTyping(){ if (!messages) return; typingDiv = document.createElement('div'); typingDiv.className='msg bot'; typingDiv.textContent='…'; messages.appendChild(typingDiv); messages.parentElement.scrollTop = messages.parentElement.scrollHeight; }
+function hideTyping(){ if (typingDiv) typingDiv.remove(); typingDiv = null; }
+
+function sleeperPlayerLink(name){ const q = encodeURIComponent(name); return `https://sleeper.com/search/${q}`; }
+function linkPlayerNames(text){ return text.replace(/\b([A-Z][a-z]+\s[A-Z][a-z]+)\b/g, (m)=>`[${m}](${sleeperPlayerLink(m)})`); }
+
 async function askJson(q) {
-  const res = await authorizedFetch(apiUrl('/api/ask'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question: q, league_id: LEAGUE_ID || undefined })
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || 'Request failed');
-  return data;
+  showTyping();
+  try {
+    const res = await authorizedFetch(apiUrl('/api/ask'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q, league_id: LEAGUE_ID || undefined })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || 'Request failed');
+    const answer = linkPlayerNames(data.answer || '');
+    addMessage('bot', answer, data.sources);
+    return data;
+  } finally { hideTyping(); }
 }
 
 form?.addEventListener('submit', async (e) => {
@@ -82,7 +94,7 @@ form?.addEventListener('submit', async (e) => {
   try {
     // Disable streaming by default to avoid timeouts on some hosts
     const data = await askJson(q);
-    addMessage('bot', data.answer || 'No answer.', data.sources);
+    // addMessage('bot', data.answer || 'No answer.', data.sources); // This line is now handled by askJson
   } catch (e2) {
     addMessage('bot', 'Error: ' + (e2?.message || String(e2)));
   } finally {
@@ -302,23 +314,25 @@ saveLeagueBtn?.addEventListener('click', () => {
 
 saveTeamBtn?.addEventListener('click', saveMyTeam);
 
-// Projections
+// Projects (league projections)
 const projBtn = document.getElementById('load-proj');
 const projList = document.getElementById('proj-list');
 projBtn?.addEventListener('click', async ()=>{
   projList.innerHTML = 'Loading projections…';
-  const params = {};
-  if (LEAGUE_ID) params.league_id = LEAGUE_ID;
-  const res = await authorizedFetch(apiUrl('/api/projections', params));
+  const res = await authorizedFetch(apiUrl('/api/league/projections', { league_id: LEAGUE_ID||'' }));
   const data = await res.json();
   if (!res.ok) { projList.textContent = data?.error || 'Error.'; return; }
-  const items = data.projections || [];
+  const table = data.standings || [];
   projList.innerHTML = '';
-  items.forEach(p => {
-    const card = document.createElement('div');
-    card.className = 'roster-card';
-    card.innerHTML = `<div class="title">Roster ${p.roster_id}</div><div class="meta">Projected: ${p.projected_points ?? 'N/A'}</div>`;
-    projList.appendChild(card);
+  table.forEach(entry => {
+    const card = document.createElement('div'); card.className='roster-card';
+    const title = document.createElement('div'); title.className='title'; title.textContent = `${entry.owner}`; card.appendChild(title);
+    const metrics = document.createElement('div'); metrics.className='metrics';
+    const m1 = document.createElement('div'); m1.className='metric'; m1.innerHTML = `<div class='label'>Proj Wins</div><div class='value'>${entry.proj_wins}</div>`;
+    const m2 = document.createElement('div'); m2.className='metric'; m2.innerHTML = `<div class='label'>Proj Losses</div><div class='value'>${entry.proj_losses}</div>`;
+    const m3 = document.createElement('div'); m3.className='metric'; m3.innerHTML = `<div class='label'>Proj Ties</div><div class='value'>${entry.proj_ties}</div>`;
+    metrics.appendChild(m1); metrics.appendChild(m2); metrics.appendChild(m3);
+    card.appendChild(metrics); projList.appendChild(card);
   });
 });
 
