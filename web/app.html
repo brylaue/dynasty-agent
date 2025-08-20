@@ -8,7 +8,8 @@
 	<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 	<script>
 		window.SUPABASE_URL=''; window.SUPABASE_ANON='';
-		fetch('/api/public/config?v=20250819').then(r=>r.json()).then(cfg=>{ window.SUPABASE_URL=cfg.supabase_url||''; window.SUPABASE_ANON=cfg.supabase_anon||''; }).catch(()=>{});
+		async function initSB(){ try{ const cfg=await (await fetch('/api/public/config?v=20250819')).json(); window.SUPABASE_URL=cfg.supabase_url||''; window.SUPABASE_ANON=cfg.supabase_anon||''; }catch{} }
+		initSB();
 	</script>
 </head>
 <body>

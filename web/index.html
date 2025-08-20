@@ -60,7 +60,12 @@
       try { const h = await (await fetch('/api/health?v=20250819')).json(); const provSel=document.getElementById('provider'); const yahooOpt=[...provSel.options].find(o=>o.value==='yahoo'); if(h.providers && !h.providers.includes('yahoo')) { if(yahooOpt) yahooOpt.remove(); document.getElementById('yahoo-connect').style.display='none'; } } catch {}
     }
     async function updateAuthUI(){ const signin=document.getElementById('google-signin'); const signout=document.getElementById('signout'); if(!SB){signin.style.display='inline-block'; signout.style.display='none'; return;} const {data:{session}}=await SB.auth.getSession(); if(session){signin.style.display='none'; signout.style.display='inline-block';} else {signin.style.display='inline-block'; signout.style.display='none';} }
-    document.getElementById('google-signin').addEventListener('click', async ()=>{ if(!SB) return alert('Auth not configured'); const {error}=await SB.auth.signInWithOAuth({provider:'google'}); if(error) alert(error.message); });
+    document.getElementById('google-signin').addEventListener('click', async ()=>{
+      if (!SB) { await initSupabase(); }
+      if (!SB) return alert('Auth not configured. Set SUPABASE_URL and SUPABASE_ANON on your backend (Render), then refresh.');
+      const { error } = await SB.auth.signInWithOAuth({ provider: 'google' });
+      if (error) alert(error.message);
+    });
     document.getElementById('signout').addEventListener('click', async ()=>{ if(SB) await SB.auth.signOut(); updateAuthUI(); });
 
     // Email auth
