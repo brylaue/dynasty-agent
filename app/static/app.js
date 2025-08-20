@@ -124,12 +124,8 @@ const weekNextBtn = document.createElement('button'); weekNextBtn.className='btn
 const weekLabel = document.createElement('span'); weekLabel.className='meta'; weekLabel.style.marginLeft='8px';
 
 async function loadMyTeamWeek(delta=0){
-  // initialize week if unknown
   if (currentWeek === null) {
-    try { const s = await (await fetch(apiUrl('/api/health'))).json(); } catch {}
-    // fallback: try /api/projections to get week
-    const pj = await (await authorizedFetch(apiUrl('/api/projections'))).json().catch(()=>({}));
-    currentWeek = pj.week || 1;
+    try { const s = await (await fetch(apiUrl('/api/state'))).json(); currentWeek = parseInt(s.week||'1'); } catch { currentWeek = 1; }
   }
   currentWeek = Math.max(1, (currentWeek||1) + delta);
   weekLabel.textContent = `Week ${currentWeek}`;
@@ -137,10 +133,14 @@ async function loadMyTeamWeek(delta=0){
   const data = await res.json();
   const list = document.getElementById('roster-list');
   if (!res.ok) { list.innerHTML = `Error: ${data?.error || 'Failed to load'}`; return; }
-  // Render starters for this week
   list.innerHTML = '';
   const card = document.createElement('div'); card.className='roster-card';
   const title = document.createElement('div'); title.className='title'; title.textContent = `${data.owner} — Week ${data.week}`; card.appendChild(title);
+  const metrics = document.createElement('div'); metrics.className='metrics';
+  const m1 = document.createElement('div'); m1.className='metric'; m1.innerHTML = `<div class='label'>Starters</div><div class='value'>${(data.starters||[]).length}</div>`;
+  const m2 = document.createElement('div'); m2.className='metric'; m2.innerHTML = `<div class='label'>Proj Points</div><div class='value'>${(data.starters||[]).reduce((a,p)=>a+(p.projected_points||0),0).toFixed(1)}</div>`;
+  const m3 = document.createElement('div'); m3.className='metric'; m3.innerHTML = `<div class='label'>Week</div><div class='value'>${data.week}</div>`;
+  metrics.appendChild(m1); metrics.appendChild(m2); metrics.appendChild(m3); card.appendChild(metrics);
   const section = document.createElement('div'); section.className='players';
   const head = document.createElement('div'); head.className='meta'; head.textContent='Starters'; section.appendChild(head);
   (data.starters||[]).forEach(p=>{
@@ -154,17 +154,9 @@ async function loadMyTeamWeek(delta=0){
   card.appendChild(section); list.appendChild(card);
 }
 
-// Insert week controls into drawer header
-(function attachWeekControls(){ if(!drawer) return; const header = drawer.querySelector('.drawer-header'); if (!header) return; const ctrls = document.createElement('div'); ctrls.style.display='flex'; ctrls.style.gap='6px'; ctrls.style.alignItems='center'; ctrls.appendChild(weekPrevBtn); ctrls.appendChild(weekNextBtn); ctrls.appendChild(weekLabel); header.appendChild(ctrls); })();
+(function attachWeekControls(){ if(!drawer) return; const header = drawer.querySelector('.drawer-header'); if (!header) return; const ctrls = document.createElement('div'); ctrls.className='segmented'; const prev=document.createElement('button'); prev.className='seg-button'; prev.textContent='◀'; prev.addEventListener('click', ()=> loadMyTeamWeek(-1)); const next=document.createElement('button'); next.className='seg-button'; next.textContent='▶'; next.addEventListener('click', ()=> loadMyTeamWeek(+1)); const lbl=document.createElement('button'); lbl.className='seg-button active'; lbl.textContent='Week'; lbl.disabled=true; ctrls.appendChild(prev); ctrls.appendChild(lbl); ctrls.appendChild(next); header.appendChild(ctrls); })();
 
-weekPrevBtn.addEventListener('click', ()=> loadMyTeamWeek(-1));
-weekNextBtn.addEventListener('click', ()=> loadMyTeamWeek(+1));
-
-openDrawerBtn?.addEventListener('click', async ()=>{
-  await loadRosters();
-  await loadMyTeamWeek(0);
-  showDrawer(true);
-});
+openDrawerBtn?.addEventListener('click', async ()=>{ await loadRosters(); currentWeek = null; await loadMyTeamWeek(0); showDrawer(true); });
 closeDrawerBtn?.addEventListener('click', ()=> showDrawer(false));
 overlay?.addEventListener('click', ()=> showDrawer(false));
 

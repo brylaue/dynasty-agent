@@ -48,6 +48,9 @@ YAHOO_ENABLED = (
     )
 )
 
+# Simple response cache
+_RESPONSE_CACHE: Dict[str, Dict[str, Any]] = {}
+
 
 class QueryBody(BaseModel):
     question: str
@@ -233,20 +236,17 @@ async def ask_agent(body: QueryBody):
     try:
         if not OPENAI_API_KEY:
             return JSONResponse(status_code=400, content={"error": "OPENAI_API_KEY is not configured on the server."})
-        # resolve user
         try:
             user_id = verify_jwt_and_get_user_id()
         except Exception:
             user_id = body.user_id or "default"
-        # prefs and profile
         prefs = memory_store.get_preferences(user_id=user_id).model_dump(exclude_none=True)
         profile = build_profile_summary(user_id, prefs)
         cache_key = json.dumps({"q": body.question, "prefs": prefs, "profile": profile, "league": body.league_id}, sort_keys=True)
+        global _RESPONSE_CACHE
         if cache_key in _RESPONSE_CACHE:
             return _RESPONSE_CACHE[cache_key]
-        # log user question
         append_chat(user_id, role="user", content=body.question)
-        # run agent
         if body.league_id:
             temp_client = SleeperClient(default_league_id=body.league_id)
             temp_graph = create_research_graph(sleeper_client=temp_client)
@@ -255,18 +255,11 @@ async def ask_agent(body: QueryBody):
             result = await research_graph.ainvoke({"question": body.question, "preferences": {**prefs, "profile": profile}})
         intent = result.get("intent")
         sources = result.get("sources", [])
-        # hide sources for non-news
         if intent not in ("trending", "news"):
             sources = []
         else:
             sources = [s for s in (sources or []) if isinstance(s, dict) and s.get("url")]
-        response = {
-            "answer": result.get("answer", "No answer produced."),
-            "sources": sources,
-            "intent": intent,
-            "data_keys": list((result.get("data") or {}).keys()),
-        }
-        # log assistant reply
+        response = {"answer": result.get("answer", "No answer produced."), "sources": sources, "intent": intent, "data_keys": list((result.get("data") or {}).keys())}
         append_chat(user_id, role="assistant", content=response["answer"])
         _RESPONSE_CACHE[cache_key] = response
         return response
@@ -435,44 +428,49 @@ async def my_team_week(week: int | None = None, league_id: str | None = None, us
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
+@app.get("/api/state")
+async def api_state():
+    try:
+        return await sleeper_client.get_nfl_state()
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 @app.get("/api/league/projections")
 async def league_projections(league_id: str | None = None):
     try:
-        # Determine season weeks (assume 1..17 for simplicity)
-        weeks = list(range(1, 18))
+        state = await sleeper_client.get_nfl_state()
+        current_week = int(state.get("week") or 1)
         rosters = await sleeper_client.build_roster_summaries(league_id=league_id)
-        id_to_team = {r['roster_id']: r for r in rosters}
-        standings = {r['roster_id']: {"roster_id": r['roster_id'], "owner": r['owner'], "proj_wins": 0, "proj_losses": 0, "proj_ties": 0} for r in rosters}
-        for w in weeks:
+        standings = {r['roster_id']: {"roster_id": r['roster_id'], "owner": r['owner'], "wins": 0, "losses": 0, "ties": 0} for r in rosters}
+        # Use completed weeks only, based on actual points
+        for w in range(1, current_week + 1):
             matchups = await sleeper_client.get_matchups(week=w, league_id=league_id)
-            # Group by matchup_id
             by_mid = {}
             for m in matchups:
                 mid = m.get('matchup_id')
                 if mid is None: continue
                 by_mid.setdefault(mid, []).append(m)
             for mid, games in by_mid.items():
-                if len(games) != 2:  # skip incomplete
+                if len(games) != 2:
                     continue
                 a, b = games
-                # sum starters_points
-                sa = sum(sp or 0 for sp in (a.get('starters_points') or []))
-                sb = sum(sp or 0 for sp in (b.get('starters_points') or []))
+                sa = float(a.get('points') or 0)
+                sb = float(b.get('points') or 0)
                 ra = a.get('roster_id'); rb = b.get('roster_id')
                 if sa > sb:
-                    standings[ra]['proj_wins'] += 1
-                    standings[rb]['proj_losses'] += 1
+                    standings[ra]['wins'] += 1
+                    standings[rb]['losses'] += 1
                 elif sb > sa:
-                    standings[rb]['proj_wins'] += 1
-                    standings[ra]['proj_losses'] += 1
+                    standings[rb]['wins'] += 1
+                    standings[ra]['losses'] += 1
                 else:
-                    standings[ra]['proj_ties'] += 1
-                    standings[rb]['proj_ties'] += 1
-        # sort by wins then ties
+                    standings[ra]['ties'] += 1
+                    standings[rb]['ties'] += 1
         table = list(standings.values())
-        table.sort(key=lambda x: (x['proj_wins'], -x['proj_losses']), reverse=True)
-        winner = table[0] if table else None
-        return {"weeks": weeks, "standings": table, "likely_winner": winner}
+        table.sort(key=lambda x: (x['wins'], -x['losses']), reverse=True)
+        leader = table[0] if table else None
+        return {"through_week": current_week, "standings": table, "leader": leader}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
