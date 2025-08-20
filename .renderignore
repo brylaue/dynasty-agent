@@ -1,0 +1,11 @@
+# Exclude non-essential files from Render deploy
+.venv/
+__pycache__/
+*.pyc
+*.log
+.git/
+.gitignore
+README.md
+data/
+notebooks/
+.DS_Store
