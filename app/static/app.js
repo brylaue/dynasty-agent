@@ -399,3 +399,30 @@ tradeEvalBtn?.addEventListener('click', async ()=>{
   tradeResult.innerHTML = '';
   addMessage('bot', data.narrative || 'Result shown above.');
 });
+
+// Cheatsheet
+const cheatsheetBtn = document.createElement('button'); cheatsheetBtn.className='btn btn-primary'; cheatsheetBtn.textContent='Load Cheat Sheet';
+const cheatsheetPanel = document.createElement('div'); cheatsheetPanel.className='messages';
+(function addCheatSheet(){ const container = document.querySelector(".tab-panel[data-tab='chat']"); if(!container) return; const box = document.createElement('div'); box.className='toolbar'; box.appendChild(cheatsheetBtn); container.prepend(box); container.appendChild(cheatsheetPanel); })();
+
+cheatsheetBtn.addEventListener('click', async ()=>{
+  cheatsheetPanel.innerHTML = 'Loading cheat sheet…';
+  const res = await authorizedFetch(apiUrl('/api/cheatsheet', { league_id: LEAGUE_ID||'' }));
+  const data = await res.json();
+  if (!res.ok) { cheatsheetPanel.textContent = data?.error || 'Error.'; return; }
+  const html = [];
+  html.push(`<div class='roster-card'><div class='title'>Week ${data.week} • ${data.league?.name||''}</div><div class='meta'>Season ${data.league?.season||''}</div></div>`);
+  function lineupCard(title, ln){ if (!ln) return ''; const rows = (ln.starters||[]).map(p=>`<div class='player'><div><img src='${playerThumbUrl(p.player_id)}' width='22' height='22' style='border-radius:50%;margin-right:6px'>${p.full_name}</div><span>${p.position||''} ${p.team||''} • ${p.pts?.toFixed? p.pts.toFixed(1): (p.pts||p.projected_points||0)} pts</span></div>`).join(''); return `<div class='roster-card'><div class='title'>${title}</div><div class='meta'>Projected total: ${ln.projected_total}</div><div class='players'>${rows}</div></div>`; }
+  html.push(lineupCard('My Optimal Lineup', data.my_team?.lineup));
+  if (data.opponent) html.push(lineupCard('Opponent Optimal Lineup', data.opponent));
+  // waivers
+  const wa = (data.waivers||[]).map(p=>`<div class='player'><span>${p.full_name} (${p.position||''} ${p.team||''})</span></div>`).join('');
+  html.push(`<div class='roster-card'><div class='title'>Waiver Targets</div><div class='players'>${wa||'No strong adds.'}</div></div>`);
+  // trades
+  const trs = (data.trades?.trending_targets||[]).map(p=>`<div class='player'><span>${p.full_name || p.player_id}</span></div>`).join('');
+  html.push(`<div class='roster-card'><div class='title'>Trade Ideas</div><div class='players'>${trs||'No obvious trade ideas yet.'}</div></div>`);
+  // news
+  const news = (data.news||[]).map(n=>`<div class='player'><a href='${n.link}' target='_blank'>${n.title}</a><span style='color:#6b7280'> ${n.source? '• '+n.source: ''}</span></div>`).join('');
+  html.push(`<div class='roster-card'><div class='title'>TL;DR News</div><div class='players'>${news||'No recent news for your roster.'}</div></div>`);
+  cheatsheetPanel.innerHTML = html.join('');
+});

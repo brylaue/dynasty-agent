@@ -524,3 +524,108 @@ async def public_config():
         "supabase_url": os.getenv("SUPABASE_URL", ""),
         "supabase_anon": os.getenv("SUPABASE_ANON", ""),
     }
+
+
+@app.get("/api/cheatsheet")
+async def cheatsheet(league_id: str | None = None, user_id: str = "default"):
+    try:
+        # Resolve user
+        try:
+            user_id = verify_jwt_and_get_user_id()
+        except Exception:
+            user_id = user_id or "default"
+        prefs = memory_store.get_preferences(user_id=user_id)
+        # Current week and league info
+        league = await sleeper_client.get_league(league_id)
+        roster_positions = league.get('roster_positions') or []
+        state = await sleeper_client.get_nfl_state()
+        week = int(state.get('week') or 1)
+        # Rosters and my team
+        rosters = await sleeper_client.build_roster_summaries(league_id=league_id)
+        my = None
+        if prefs.roster_owner_name:
+            for r in rosters:
+                if (r.get('owner') or '').lower() == prefs.roster_owner_name.lower():
+                    my = r; break
+        if not my:
+            return JSONResponse(status_code=400, content={"error": "Select your team first in the roster drawer."})
+        # Projected players_points from Sleeper matchups
+        matchups = await sleeper_client.get_matchups(week=week, league_id=league_id)
+        my_pp = {}
+        opp_pp = {}
+        my_opp_roster_id = None
+        # map roster_id -> players_points and matchup pairing
+        by_mid = {}
+        for m in matchups:
+            mid = m.get('matchup_id')
+            if mid is not None:
+                by_mid.setdefault(mid, []).append(m)
+        for mid, pair in by_mid.items():
+            if len(pair) != 2: continue
+            a,b = pair
+            if a.get('roster_id') == my.get('roster_id'):
+                my_pp = a.get('players_points') or {}
+                opp_pp = b.get('players_points') or {}
+                my_opp_roster_id = b.get('roster_id')
+                break
+            if b.get('roster_id') == my.get('roster_id'):
+                my_pp = b.get('players_points') or {}
+                opp_pp = a.get('players_points') or {}
+                my_opp_roster_id = a.get('roster_id')
+                break
+        catalog = await sleeper_client.get_players()
+        # Optimal lineup helpers
+        def eligible(slot: str) -> set:
+            return _eligible_positions(slot)
+        def optimal(roster: Dict[str, Any], pp: Dict[str,float]) -> Dict[str, Any]:
+            candidates = []
+            for pid in (roster.get('players') or []):
+                p = catalog.get(pid) or {}
+                pos = (p.get('position') or '').upper()
+                candidates.append({"player_id": pid, "pos": pos, "pts": float(pp.get(pid) or 0.0), "full_name": p.get('full_name'), "team": p.get('team')})
+            used=set(); chosen=[]; total=0.0
+            for slot in roster_positions:
+                if slot.upper()=='BN': continue
+                elig = eligible(slot); best=None; best_pts=-1.0
+                for c in candidates:
+                    if c['player_id'] in used: continue
+                    if c['pos'] in elig and c['pts'] > best_pts:
+                        best=c; best_pts=c['pts']
+                if best:
+                    used.add(best['player_id']); chosen.append(best); total+=best['pts']
+            return {"starters": chosen, "projected_total": round(total,2)}
+        my_lineup = optimal(my, my_pp)
+        opp_lineup = None
+        if my_opp_roster_id is not None:
+            opp = next((r for r in rosters if r['roster_id']==my_opp_roster_id), None)
+            if opp: opp_lineup = optimal(opp, opp_pp)
+        # Waivers (trending adds not on any roster)
+        trending = await sleeper_client.get_trending_players(trend_type='add', lookback_hours=72, limit=50)
+        owned = {pid for r in rosters for pid in (r.get('players') or [])}
+        waiver_targets = []
+        for t in trending:
+            pid = t.get('player_id'); p = catalog.get(pid) if pid else None
+            if pid and pid not in owned and p:
+                waiver_targets.append({"player_id": pid, "full_name": p.get('full_name'), "position": p.get('position'), "team": p.get('team')})
+            if len(waiver_targets) >= 10: break
+        # Trade suggestions (reuse analysis)
+        trade_suggestions = await analysis.suggest_trade_targets(rosters, trending)
+        # News TL;DR for roster only
+        names = []
+        for pid in (my.get('players') or []):
+            p = catalog.get(pid) or {}
+            nm = p.get('full_name') or ((p.get('first_name') or '') + ' ' + (p.get('last_name') or '')).strip()
+            if nm: names.append(nm)
+        news_items = filter_news_by_names(await gather_all_news(), names)
+        news_links = [{"title": it.get('tldr') or it.get('title'), "link": it.get('link'), "source": it.get('source') or it.get('domain')} for it in news_items if it.get('link')][:10]
+        return {
+            "week": week,
+            "league": {"name": league.get('name'), "season": league.get('season'), "roster_positions": roster_positions},
+            "my_team": {"owner": my.get('owner'), "roster_id": my.get('roster_id'), "lineup": my_lineup},
+            "opponent": opp_lineup,
+            "waivers": waiver_targets,
+            "trades": trade_suggestions,
+            "news": news_links,
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
