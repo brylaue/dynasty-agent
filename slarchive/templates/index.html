@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>slarchive</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
+    .search { display: flex; gap: 8px; }
+    input[type="text"] { flex: 1; padding: 10px; font-size: 16px; }
+    button { padding: 10px 14px; font-size: 16px; }
+    .result { border-bottom: 1px solid #eee; padding: 10px 0; }
+    .meta { color: #666; font-size: 12px; margin-bottom: 4px; }
+    .text { white-space: pre-wrap; }
+  </style>
+  <script>
+    async function doSearch(evt) {
+      evt && evt.preventDefault();
+      const q = document.getElementById('q').value.trim();
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      const out = document.getElementById('results');
+      out.innerHTML = '';
+      for (const r of data.results) {
+        const div = document.createElement('div');
+        div.className = 'result';
+        const ts = r.ts;
+        const date = new Date(parseFloat(ts) * 1000);
+        const header = document.createElement('div');
+        header.className = 'meta';
+        header.textContent = `#${r.channel_name || r.channel_id} • ${r.user_display || r.user_id || 'unknown'} • ${date.toLocaleString()}`;
+        const text = document.createElement('div');
+        text.className = 'text';
+        text.textContent = r.text || '';
+        div.appendChild(header);
+        div.appendChild(text);
+        out.appendChild(div);
+      }
+    }
+    window.addEventListener('DOMContentLoaded', () => {
+      const qInput = document.getElementById('q');
+      qInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(e); });
+      doSearch();
+    });
+  </script>
+</head>
+<body>
+  <h1>slarchive</h1>
+  <form class="search" onsubmit="doSearch(event)">
+    <input id="q" type="text" placeholder="Search messages (FTS5 syntax supported)" value="{{ q }}" />
+    <button type="submit">Search</button>
+  </form>
+  <div id="results"></div>
+</body>
+</html>
+
