@@ -63,7 +63,8 @@
     document.getElementById('google-signin').addEventListener('click', async ()=>{
       if (!SB) { await initSupabase(); }
       if (!SB) return alert('Auth not configured. Set SUPABASE_URL and SUPABASE_ANON on your backend (Render), then refresh.');
-      const { error } = await SB.auth.signInWithOAuth({ provider: 'google' });
+      const redirectTo = `${window.location.origin}/app.html`;
+      const { error } = await SB.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
       if (error) alert(error.message);
     });
     document.getElementById('signout').addEventListener('click', async ()=>{ if(SB) await SB.auth.signOut(); updateAuthUI(); });
