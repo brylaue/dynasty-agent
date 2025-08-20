@@ -63,7 +63,7 @@
     document.getElementById('google-signin').addEventListener('click', async ()=>{
       if (!SB) { await initSupabase(); }
       if (!SB) return alert('Auth not configured. Set SUPABASE_URL and SUPABASE_ANON on your backend (Render), then refresh.');
-      const redirectTo = `${window.location.origin}/app.html`;
+      const redirectTo = `${window.location.origin}/app`;
       const { error } = await SB.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
       if (error) alert(error.message);
     });
@@ -93,7 +93,7 @@
     yahooBtn.addEventListener('click',()=>{ window.location.href='/api/yahoo/auth'; });
 
     document.getElementById('continue').addEventListener('click', async ()=>{
-      const prov=providerSel.value; const league=leagueInput.value.trim(); localStorage.setItem('provider',prov); if(prov==='sleeper'&&league) localStorage.setItem('league_id',league); else localStorage.removeItem('league_id'); if(SB){ const {data:{session}}=await SB.auth.getSession(); if(session) localStorage.setItem('sb_token', session.access_token);} window.location.href='/app.html?v=20250819';
+      const prov=providerSel.value; const league=leagueInput.value.trim(); localStorage.setItem('provider',prov); if(prov==='sleeper'&&league) localStorage.setItem('league_id',league); else localStorage.removeItem('league_id'); if(SB){ const {data:{session}}=await SB.auth.getSession(); if(session) localStorage.setItem('sb_token', session.access_token);} window.location.href='/app';
     });
 
     initSupabase();
