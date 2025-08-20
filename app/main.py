@@ -17,6 +17,7 @@ from app.services.providers import ProviderRouter, LeagueProvider
 from app.services.yahoo_client import YahooClient
 from app.services.news_aggregator import fetch_rss_news, filter_news_by_names
 from app.services.auth import verify_jwt_and_get_user_id
+from app.services.user_memory import append_chat, append_event, build_profile_summary
 
 load_dotenv()
 
@@ -208,31 +209,74 @@ async def set_my_team(body: SetTeamBody):
     return {"ok": True}
 
 
+@app.post("/api/events")
+async def add_event(kind: str, payload: str = "{}", user_id: str = "default"):
+    try:
+        try:
+            user_id = verify_jwt_and_get_user_id()
+        except Exception:
+            user_id = user_id or "default"
+        append_event(user_id, kind=kind, payload=json.loads(payload))
+        return {"ok": True}
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+
+@app.get("/api/profile")
+async def get_profile(user_id: str = "default"):
+    try:
+        try:
+            user_id = verify_jwt_and_get_user_id()
+        except Exception:
+            user_id = user_id or "default"
+        prefs = memory_store.get_preferences(user_id=user_id).model_dump(exclude_none=True)
+        return {"user_id": user_id, "summary": build_profile_summary(user_id, prefs)}
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+
 @app.post("/api/ask")
 async def ask_agent(body: QueryBody):
     try:
         if not OPENAI_API_KEY:
             return JSONResponse(status_code=400, content={"error": "OPENAI_API_KEY is not configured on the server."})
-        prefs = memory_store.get_preferences(user_id=body.user_id or "default").model_dump(exclude_none=True)
+        # resolve user
+        try:
+            user_id = verify_jwt_and_get_user_id()
+        except Exception:
+            user_id = body.user_id or "default"
+        # prefs and profile
+        prefs = memory_store.get_preferences(user_id=user_id).model_dump(exclude_none=True)
+        profile = build_profile_summary(user_id, prefs)
+        cache_key = json.dumps({"q": body.question, "prefs": prefs, "profile": profile, "league": body.league_id}, sort_keys=True)
+        if cache_key in _RESPONSE_CACHE:
+            return _RESPONSE_CACHE[cache_key]
+        # log user question
+        append_chat(user_id, role="user", content=body.question)
+        # run agent
         if body.league_id:
             temp_client = SleeperClient(default_league_id=body.league_id)
             temp_graph = create_research_graph(sleeper_client=temp_client)
-            result = await temp_graph.ainvoke({"question": body.question, "preferences": prefs})
+            result = await temp_graph.ainvoke({"question": body.question, "preferences": {**prefs, "profile": profile}})
         else:
-            result = await research_graph.ainvoke({"question": body.question, "preferences": prefs})
+            result = await research_graph.ainvoke({"question": body.question, "preferences": {**prefs, "profile": profile}})
         intent = result.get("intent")
         sources = result.get("sources", [])
-        # Only show sources for news/trending, and only include URL-based entries
+        # hide sources for non-news
         if intent not in ("trending", "news"):
             sources = []
         else:
             sources = [s for s in (sources or []) if isinstance(s, dict) and s.get("url")]
-        return {
+        response = {
             "answer": result.get("answer", "No answer produced."),
             "sources": sources,
             "intent": intent,
             "data_keys": list((result.get("data") or {}).keys()),
         }
+        # log assistant reply
+        append_chat(user_id, role="assistant", content=response["answer"])
+        _RESPONSE_CACHE[cache_key] = response
+        return response
     except Exception as e:  # pragma: no cover
         return JSONResponse(status_code=500, content={"error": str(e)})
 
