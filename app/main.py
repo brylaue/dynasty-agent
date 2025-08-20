@@ -214,16 +214,23 @@ async def ask_agent(body: QueryBody):
         if not OPENAI_API_KEY:
             return JSONResponse(status_code=400, content={"error": "OPENAI_API_KEY is not configured on the server."})
         prefs = memory_store.get_preferences(user_id=body.user_id or "default").model_dump(exclude_none=True)
-        if body.league_id and body.provider == LeagueProvider.SLEEPER:
+        if body.league_id:
             temp_client = SleeperClient(default_league_id=body.league_id)
             temp_graph = create_research_graph(sleeper_client=temp_client)
             result = await temp_graph.ainvoke({"question": body.question, "preferences": prefs})
         else:
             result = await research_graph.ainvoke({"question": body.question, "preferences": prefs})
+        intent = result.get("intent")
+        sources = result.get("sources", [])
+        # Only show sources for news/trending, and only include URL-based entries
+        if intent not in ("trending", "news"):
+            sources = []
+        else:
+            sources = [s for s in (sources or []) if isinstance(s, dict) and s.get("url")]
         return {
             "answer": result.get("answer", "No answer produced."),
-            "sources": result.get("sources", []),
-            "intent": result.get("intent"),
+            "sources": sources,
+            "intent": intent,
             "data_keys": list((result.get("data") or {}).keys()),
         }
     except Exception as e:  # pragma: no cover
@@ -248,7 +255,13 @@ async def ask_agent_stream(question: str, user_id: str = "default", league_id: s
             else:
                 result = await research_graph.ainvoke({"question": question, "preferences": prefs})
             answer = result.get("answer", "")
+            intent = result.get("intent")
             sources = result.get("sources", [])
+            # Filter sources same as JSON path
+            if intent not in ("trending", "news"):
+                sources = []
+            else:
+                sources = [s for s in (sources or []) if isinstance(s, dict) and s.get("url")]
             chunk_size = 200
             for i in range(0, len(answer), chunk_size):
                 chunk = {"token": answer[i:i+chunk_size]}
