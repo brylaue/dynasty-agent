@@ -12,6 +12,8 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .db import get_db, init_db, search_messages
 from .ingest import worker
+from .config import SLACK_BOT_TOKEN
+from slack_sdk.web.async_client import AsyncWebClient
 
 
 app = FastAPI(title="slarchive")
@@ -31,6 +33,19 @@ env = Environment(
 async def startup():
     await init_db()
     asyncio.create_task(worker.start())
+    # Log which Slack workspace the token is tied to (if configured)
+    async def _log_auth_test():
+        if not SLACK_BOT_TOKEN:
+            return
+        try:
+            client = AsyncWebClient(token=SLACK_BOT_TOKEN)
+            resp = await client.auth_test()
+            team = resp.get("team")
+            url = resp.get("url")
+            print(f"Slack auth: connected to team='{team}' url='{url}'")
+        except Exception as e:
+            print(f"Slack auth_test failed: {e}")
+    asyncio.create_task(_log_auth_test())
 
 
 @app.get("/healthz")
@@ -58,4 +73,24 @@ async def index(request: Request, q: str = ""):
     template = env.get_template("index.html")
     html = template.render(q=q)
     return HTMLResponse(html)
+
+
+@app.get("/api/slack/workspace")
+async def slack_workspace_info():
+    if not SLACK_BOT_TOKEN:
+        return JSONResponse(status_code=400, content={"error": "SLACK_BOT_TOKEN not set"})
+    try:
+        client = AsyncWebClient(token=SLACK_BOT_TOKEN)
+        resp = await client.auth_test()
+        return JSONResponse(
+            content={
+                "ok": True,
+                "team_id": resp.get("team_id"),
+                "team": resp.get("team"),
+                "url": resp.get("url"),
+                "user_id": resp.get("user_id"),
+            }
+        )
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"ok": False, "error": str(e)})
 
