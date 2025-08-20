@@ -436,41 +436,84 @@ async def api_state():
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
+def _eligible_positions(slot: str) -> set:
+    s = slot.upper()
+    if s in {"QB","RB","WR","TE","K","DEF"}:
+        return {s}
+    if s in {"FLEX","WRRB","WRRBTE"}:
+        return {"RB","WR","TE"}
+    if s in {"SUPER_FLEX","QBRBWRTE"}:
+        return {"QB","RB","WR","TE"}
+    return set()
+
+def _optimal_projected_total(roster: Dict[str, Any], players_points: Dict[str, float], roster_positions: List[str], catalog: Dict[str, Any]) -> float:
+    # Build candidate list: (player_id, position, projected_points)
+    candidates = []
+    for pid in (roster.get('players') or []):
+        p = catalog.get(pid) or {}
+        pos = (p.get('position') or '').upper()
+        pts = float(players_points.get(pid) or 0.0)
+        candidates.append({"player_id": pid, "pos": pos, "pts": pts})
+    used = set()
+    total = 0.0
+    for slot in roster_positions:
+        if slot.upper() == 'BN':
+            continue
+        eligible = _eligible_positions(slot)
+        best = None; best_pts = -1.0
+        for c in candidates:
+            if c['player_id'] in used:
+                continue
+            if c['pos'] in eligible and c['pts'] > best_pts:
+                best_pts = c['pts']; best = c
+        if best is not None:
+            used.add(best['player_id'])
+            total += best['pts']
+    return round(total, 2)
+
 @app.get("/api/league/projections")
-async def league_projections(league_id: str | None = None):
+async def league_projections(league_id: str | None = None, start_week: int | None = None, end_week: int | None = None):
     try:
+        # League profile for roster_positions
+        league = await sleeper_client.get_league(league_id)
+        roster_positions = league.get('roster_positions') or []
         state = await sleeper_client.get_nfl_state()
         current_week = int(state.get("week") or 1)
+        start_w = int(start_week or current_week)
+        end_w = int(end_week or 17)
         rosters = await sleeper_client.build_roster_summaries(league_id=league_id)
-        standings = {r['roster_id']: {"roster_id": r['roster_id'], "owner": r['owner'], "wins": 0, "losses": 0, "ties": 0} for r in rosters}
-        # Use completed weeks only, based on actual points
-        for w in range(1, current_week + 1):
+        standings = {r['roster_id']: {"roster_id": r['roster_id'], "owner": r['owner'], "proj_wins": 0, "proj_losses": 0, "proj_ties": 0} for r in rosters}
+        catalog = await sleeper_client.get_players()
+        for w in range(start_w, end_w + 1):
             matchups = await sleeper_client.get_matchups(week=w, league_id=league_id)
             by_mid = {}
+            roster_to_pp: Dict[int, Dict[str,float]] = {}
             for m in matchups:
+                rid = m.get('roster_id')
+                if rid is not None:
+                    roster_to_pp[rid] = m.get('players_points') or {}
                 mid = m.get('matchup_id')
                 if mid is None: continue
                 by_mid.setdefault(mid, []).append(m)
             for mid, games in by_mid.items():
-                if len(games) != 2:
-                    continue
+                if len(games) != 2: continue
                 a, b = games
-                sa = float(a.get('points') or 0)
-                sb = float(b.get('points') or 0)
                 ra = a.get('roster_id'); rb = b.get('roster_id')
+                ta = next((r for r in rosters if r['roster_id']==ra), None)
+                tb = next((r for r in rosters if r['roster_id']==rb), None)
+                if not ta or not tb: continue
+                sa = _optimal_projected_total(ta, roster_to_pp.get(ra, {}), roster_positions, catalog)
+                sb = _optimal_projected_total(tb, roster_to_pp.get(rb, {}), roster_positions, catalog)
                 if sa > sb:
-                    standings[ra]['wins'] += 1
-                    standings[rb]['losses'] += 1
+                    standings[ra]['proj_wins'] += 1; standings[rb]['proj_losses'] += 1
                 elif sb > sa:
-                    standings[rb]['wins'] += 1
-                    standings[ra]['losses'] += 1
+                    standings[rb]['proj_wins'] += 1; standings[ra]['proj_losses'] += 1
                 else:
-                    standings[ra]['ties'] += 1
-                    standings[rb]['ties'] += 1
+                    standings[ra]['proj_ties'] += 1; standings[rb]['proj_ties'] += 1
         table = list(standings.values())
-        table.sort(key=lambda x: (x['wins'], -x['losses']), reverse=True)
+        table.sort(key=lambda x: (x['proj_wins'], -x['proj_losses']), reverse=True)
         leader = table[0] if table else None
-        return {"through_week": current_week, "standings": table, "leader": leader}
+        return {"weeks": list(range(start_w, end_w+1)), "standings": table, "likely_winner": leader}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
