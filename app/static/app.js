@@ -349,11 +349,9 @@ newsBtn?.addEventListener('click', async ()=>{
   items.forEach(n => {
     const div = document.createElement('div');
     div.className = 'msg bot';
-    const a = document.createElement('a');
-    a.href = n.link; a.target = '_blank'; a.textContent = n.title;
-    const meta = document.createElement('div'); meta.className='meta'; meta.textContent = `${n.source} • ${n.published || ''}`;
-    div.appendChild(a); div.appendChild(meta);
-    newsList.appendChild(div);
+    const a = document.createElement('a'); a.href = n.link; a.target = '_blank'; a.textContent = n.tldr || n.title;
+    const meta = document.createElement('div'); meta.className='meta'; meta.textContent = `${n.source || n.domain || ''}`;
+    div.appendChild(a); div.appendChild(meta); newsList.appendChild(div);
   });
 });
 
