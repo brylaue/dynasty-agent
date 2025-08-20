@@ -250,3 +250,44 @@ class SleeperClient:
 		if not pid:
 			return None
 		return {"player_id": pid, "full_name": best_name}
+
+	async def build_roster_detail_for_week(self, roster_id: int, week: int, league_id: Optional[str] = None) -> Dict[str, Any]:
+		rosters = await self.get_rosters(league_id)
+		target = None
+		for r in rosters:
+			if r.get("roster_id") == roster_id:
+				target = r
+				break
+		if not target:
+			return {"error": "roster not found", "roster_id": roster_id}
+		users = await self.get_user_id_to_display_name(league_id)
+		owner_id = target.get("owner_id")
+		owner = users.get(owner_id, owner_id)
+		starters_ids = target.get("starters", []) or []
+		bench_ids = [pid for pid in (target.get("players") or []) if pid not in starters_ids]
+		starters_named = await self.resolve_player_list(starters_ids)
+		bench_named = await self.resolve_player_list(bench_ids)
+		# projections for given week
+		proj_map: Dict[str, float] = {}
+		try:
+			matchups = await self.get_matchups(week=week, league_id=league_id)
+			for m in matchups:
+				if m.get("roster_id") == roster_id:
+					sp = m.get("starters_points") or []
+					for idx, pid in enumerate(starters_ids):
+						if idx < len(sp) and sp[idx] is not None:
+							proj_map[pid] = float(sp[idx])
+					break
+		except Exception:
+			pass
+		for s in starters_named:
+			pp = proj_map.get(s.get("player_id"))
+			if pp is not None:
+				s["projected_points"] = round(pp, 2)
+		return {
+			"roster_id": roster_id,
+			"owner": owner,
+			"week": week,
+			"starters": starters_named,
+			"bench": bench_named,
+		}

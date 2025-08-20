@@ -372,6 +372,32 @@ async def api_trade_evaluate(body: TradeEvalBody):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
+@app.get("/api/my-team/week")
+async def my_team_week(week: int | None = None, league_id: str | None = None, user_id: str = "default"):
+    try:
+        # Determine week
+        if week is None:
+            state = await sleeper_client.get_nfl_state()
+            week = int(state.get("week") or 1)
+        # Determine my team roster_id
+        prefs = memory_store.get_preferences(user_id=user_id)
+        roster_id = getattr(prefs, 'roster_id', None)
+        if roster_id is None:
+            # try lookup by owner name
+            rosters = await sleeper_client.build_roster_summaries(league_id=league_id)
+            owner_name = (prefs.roster_owner_name or '').lower()
+            for r in rosters:
+                if (r.get('owner') or '').lower() == owner_name:
+                    roster_id = r.get('roster_id')
+                    break
+        if roster_id is None:
+            return JSONResponse(status_code=400, content={"error": "Select your team first in the roster drawer."})
+        detail = await sleeper_client.build_roster_detail_for_week(roster_id=int(roster_id), week=int(week), league_id=league_id)
+        return detail
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 @app.get("/api/public/config")
 async def public_config():
     return {

@@ -105,8 +105,52 @@ function showDrawer(show) {
   overlay.classList.toggle('hidden', !show);
 }
 
+// Week selector in roster drawer for My Team
+let currentWeek = null;
+const weekPrevBtn = document.createElement('button'); weekPrevBtn.className='btn btn-secondary'; weekPrevBtn.textContent='Prev Week';
+const weekNextBtn = document.createElement('button'); weekNextBtn.className='btn btn-secondary'; weekNextBtn.textContent='Next Week';
+const weekLabel = document.createElement('span'); weekLabel.className='meta'; weekLabel.style.marginLeft='8px';
+
+async function loadMyTeamWeek(delta=0){
+  // initialize week if unknown
+  if (currentWeek === null) {
+    try { const s = await (await fetch(apiUrl('/api/health'))).json(); } catch {}
+    // fallback: try /api/projections to get week
+    const pj = await (await authorizedFetch(apiUrl('/api/projections'))).json().catch(()=>({}));
+    currentWeek = pj.week || 1;
+  }
+  currentWeek = Math.max(1, (currentWeek||1) + delta);
+  weekLabel.textContent = `Week ${currentWeek}`;
+  const res = await authorizedFetch(apiUrl('/api/my-team/week', { week: currentWeek, league_id: LEAGUE_ID||'' }));
+  const data = await res.json();
+  const list = document.getElementById('roster-list');
+  if (!res.ok) { list.innerHTML = `Error: ${data?.error || 'Failed to load'}`; return; }
+  // Render starters for this week
+  list.innerHTML = '';
+  const card = document.createElement('div'); card.className='roster-card';
+  const title = document.createElement('div'); title.className='title'; title.textContent = `${data.owner} — Week ${data.week}`; card.appendChild(title);
+  const section = document.createElement('div'); section.className='players';
+  const head = document.createElement('div'); head.className='meta'; head.textContent='Starters'; section.appendChild(head);
+  (data.starters||[]).forEach(p=>{
+    const row = document.createElement('div'); row.className='player';
+    const left = document.createElement('div');
+    const img = document.createElement('img'); img.src=playerThumbUrl(p.player_id); img.alt=p.full_name; img.width=22; img.height=22; img.style.borderRadius='50%'; img.style.marginRight='6px';
+    left.appendChild(img); const name=document.createElement('span'); name.textContent=p.full_name; left.appendChild(name);
+    const right = document.createElement('span'); const proj = (p.projected_points!=null)?` • ${p.projected_points} pts`:''; right.textContent=`${p.position||''} ${p.team||''}${proj}`;
+    row.appendChild(left); row.appendChild(right); section.appendChild(row);
+  });
+  card.appendChild(section); list.appendChild(card);
+}
+
+// Insert week controls into drawer header
+(function attachWeekControls(){ if(!drawer) return; const header = drawer.querySelector('.drawer-header'); if (!header) return; const ctrls = document.createElement('div'); ctrls.style.display='flex'; ctrls.style.gap='6px'; ctrls.style.alignItems='center'; ctrls.appendChild(weekPrevBtn); ctrls.appendChild(weekNextBtn); ctrls.appendChild(weekLabel); header.appendChild(ctrls); })();
+
+weekPrevBtn.addEventListener('click', ()=> loadMyTeamWeek(-1));
+weekNextBtn.addEventListener('click', ()=> loadMyTeamWeek(+1));
+
 openDrawerBtn?.addEventListener('click', async ()=>{
   await loadRosters();
+  await loadMyTeamWeek(0);
   showDrawer(true);
 });
 closeDrawerBtn?.addEventListener('click', ()=> showDrawer(false));
