@@ -51,6 +51,10 @@ class SlackIngestWorker:
     async def start(self) -> None:
         if self._started:
             return
+        # If tokens are not configured, skip starting Socket Mode to allow the web app to run.
+        if not SLACK_APP_TOKEN or not SLACK_BOT_TOKEN:
+            print("Slack tokens not set; skipping Socket Mode worker. Set SLACK_APP_TOKEN and SLACK_BOT_TOKEN in .env")
+            return
         await init_db()
         self._handler = AsyncSocketModeHandler(self.app, SLACK_APP_TOKEN)
         await self._handler.start_async()
