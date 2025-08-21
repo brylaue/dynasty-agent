@@ -246,6 +246,20 @@ function rosterCard(r) {
 // Persist my team locally for frontend behavior
 let MY_TEAM = localStorage.getItem('my_team') || '';
 
+// Restore prefs on app load
+(async function restorePrefs(){
+  try {
+    const res = await authorizedFetch(apiUrl('/api/prefs'));
+    if (!res.ok) return;
+    const prefs = await res.json();
+    if (prefs && prefs.roster_owner_name) {
+      MY_TEAM = prefs.roster_owner_name;
+      localStorage.setItem('my_team', MY_TEAM);
+      addMessage('bot', `Welcome back! Loaded your team: ${MY_TEAM}`);
+    }
+  } catch {}
+})();
+
 async function loadRosters() {
   if (!rosterList) return;
   rosterList.innerHTML = 'Loading rosters…';
